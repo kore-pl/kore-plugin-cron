@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -182,5 +183,37 @@ func TestConcurrentAdds(t *testing.T) {
 	}
 	if result.Count != workers {
 		t.Fatalf("并发写入丢失: 期望 %d 条，实际 %d", workers, result.Count)
+	}
+}
+
+// writeFakeCrontab 把 PATH 指向只含一个假 crontab 的临时目录。
+func writeFakeCrontab(t *testing.T, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "crontab")
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatalf("写入假 crontab 失败: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// TestListPermissionDeniedReturnsWarning 验证权限不足是环境限制：
+// 返回成功 + 空列表 + warning，而不是把它当服务故障。
+func TestListPermissionDeniedReturnsWarning(t *testing.T) {
+	writeFakeCrontab(t, "#!/bin/sh\necho 'fopen: 权限不够' >&2\nexit 1\n")
+	result, err := NewStore().List(context.Background())
+	if err != nil {
+		t.Fatalf("权限不足不应返回错误: %v", err)
+	}
+	if result.Count != 0 || len(result.Entries) != 0 || result.Warning == "" {
+		t.Fatalf("权限不足应返回空列表 + warning: %+v", result)
+	}
+}
+
+// TestListRealIOFailureStillErrors 验证真正的 I/O 失败不被吞掉。
+func TestListRealIOFailureStillErrors(t *testing.T) {
+	writeFakeCrontab(t, "#!/bin/sh\necho 'boom: cannot open spool' >&2\nexit 1\n")
+	if _, err := NewStore().List(context.Background()); !errors.Is(err, ErrIO) {
+		t.Fatalf("真实 I/O 失败仍应为 ErrIO，实际: %v", err)
 	}
 }

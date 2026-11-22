@@ -1,13 +1,24 @@
 package croncore
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // List 执行 `crontab -l` 并解析当前用户的任务条目；无 crontab 返回空数组。
+//
+// 权限不足属于环境限制：返回成功 + 空列表 + warning，不映射成服务端故障。
 func (s *Store) List(ctx context.Context) (*ListResult, error) {
 	if err := s.preflight(ctx, false); err != nil {
 		return nil, err
 	}
 	content, err := s.readCrontab(ctx)
+	if errors.Is(err, ErrNoPermission) {
+		return &ListResult{
+			Entries: []Entry{}, Count: 0,
+			Warning: "当前用户无 crontab 权限（crontab -l 报权限错误）",
+		}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

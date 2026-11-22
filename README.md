@@ -11,7 +11,7 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 | `kore.ping` | 存活与运行期指标 |
 | `kore.shutdown` | 优雅退出 |
 | `kore.reload` | 无状态插件，空操作 |
-| `cron.list` | 执行 `crontab -l`，返回条目数组与总数 |
+| `cron.list` | 执行 `crontab -l`，返回条目数组与总数；权限不足返回 `entries: []` + `warning`（环境限制，非故障） |
 | `cron.add` | 校验后追加条目，写前备份，整份写回 |
 | `cron.remove` | 按 0 起下标删除条目及其紧邻注释 |
 | `cron.replace` | 按 0 起下标替换 schedule / command，保留注释 |
@@ -28,6 +28,7 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 - `comment`：紧邻任务行上方的连续注释块（去掉 `#` 前缀），无注释时省略。
 - `raw`：原始行文本，便于核对。
 - 无 crontab（`crontab -l` 返回 `no crontab for <user>`）时 `entries` 为 `[]`，不是错误。
+- **权限不足**（`crontab -l` 报 `permission denied` / `权限不够`）时同样返回成功：`entries` 为 `[]`、`count` 为 0，并附 `warning`（如「当前用户无 crontab 权限」）——这是环境限制，不映射成服务端故障；真正的 I/O 失败仍返回错误。
 
 `cron.add` 入参 `{"schedule":"分 时 日 月 周","command":"...","comment":"可选"}`，
 成功返回 `{"entry":{...},"backup_path":"..."}`。`cron.remove` 入参

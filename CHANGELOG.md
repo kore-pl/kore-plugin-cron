@@ -14,3 +14,9 @@
 - feat(cron): 零轮询事件驱动设计——无周期定时器与延时回调，调度交宿主调度器与 systemd timer。
 - feat(cron): 生产级四类故障注入测试（kill / timeout / disk / cgroup）。
 - feat(cron): 确定性打包（显式条目 + gzip -9n + 固定 mtime/owner，size_bytes 回填偏差 ≤10%）。
+
+## [Unreleased]
+
+### Fixed
+
+- `cron.list` 区分「无 crontab」（正常空）与「权限不足」（环境限制）：权限错误返回成功 + 空列表 + `warning` 字段，不再以 500 / 原始 stderr 甩给界面；真正 I/O 失败仍返回错误。

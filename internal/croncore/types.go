@@ -16,9 +16,13 @@ type Entry struct {
 }
 
 // ListResult 是 cron.list 的结构化结果；无 crontab 时 Entries 为空数组。
+//
+// Warning 非空表示"当前环境读不到 crontab"（如权限不足）——这是环境限制，
+// 返回成功 + 空列表，让界面显示灰底提示条而不是把 500 甩给用户。
 type ListResult struct {
 	Entries []Entry `json:"entries"`
 	Count   int     `json:"count"`
+	Warning string  `json:"warning,omitempty"`
 }
 
 // AddParams 是 cron.add 的入参。

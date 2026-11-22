@@ -35,12 +35,16 @@ func (s *Store) readCrontab(ctx context.Context) (string, error) {
 	if ctx.Err() != nil {
 		return "", wrap(ErrTimeout, "crontab -l 超时: "+ctx.Err().Error())
 	}
-	if isNoCrontab(stdout.String() + stderr.String()) {
+	combined := stdout.String() + stderr.String()
+	if isNoCrontab(combined) {
 		return "", nil
 	}
 	detail := strings.TrimSpace(stderr.String())
 	if detail == "" {
 		detail = err.Error()
+	}
+	if isPermissionError(combined) {
+		return "", wrap(ErrNoPermission, "crontab -l 权限不足: "+detail)
 	}
 	return "", wrap(ErrIO, "crontab -l 失败: "+detail)
 }
@@ -48,6 +52,21 @@ func (s *Store) readCrontab(ctx context.Context) (string, error) {
 // isNoCrontab 识别“当前用户没有 crontab”的提示。
 func isNoCrontab(output string) bool {
 	return strings.Contains(strings.ToLower(output), "no crontab for")
+}
+
+// isPermissionError 识别权限类错误（英文 locale 与中文 locale 都要覆盖）。
+// 典型原文：`crontab: permission denied` / `fopen: 权限不够`。
+func isPermissionError(output string) bool {
+	text := strings.ToLower(output)
+	for _, marker := range []string{
+		"permission denied", "operation not permitted", "not permitted",
+		"权限不够", "权限不足", "没有权限", "无权访问",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeCrontab 以 `crontab -` 从 stdin 写入整份内容；系统 crontab 负责替换

@@ -5,6 +5,8 @@ import "errors"
 // 业务错误哨兵：故障注入测试据此断言方法级错误返回，而非仅断言 error != nil。
 var (
 	ErrInvalidParam = errors.New("cron: invalid parameter")
+	// ErrNoPermission 表示当前用户没有 crontab 权限（环境限制，不是服务端故障）。
+	ErrNoPermission = errors.New("cron: crontab permission denied")
 	ErrNotFound     = errors.New("cron: job not found")
 	ErrIO           = errors.New("cron: storage I/O error")
 	ErrResource     = errors.New("cron: resource limit exceeded")
