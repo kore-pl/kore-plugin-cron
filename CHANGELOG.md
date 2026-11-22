@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (2026-11-23)
+
+- fix: 权限不足返回空列表 + warning，不再当服务故障
+- build: 位级可复现打包（stage chmod + tar --mode 归一、size_bytes 收敛），二进制改嵌 manifest.json，消除同版本 sha 漂移
+
 ## 0.2.0 (2026-11-22)
 
 - feat(cron): cron.list / cron.add / cron.remove / cron.replace 真实管理当前用户 crontab（`crontab -l` / `crontab -`），不再只是内存骨架。
