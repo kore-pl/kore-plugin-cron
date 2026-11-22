@@ -25,7 +25,7 @@ func TestTimeoutFaultAdd(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultTimeout)
 	_, err := store.Add(context.Background(), croncore.AddParams{
-		Name: "daily", Schedule: "0 3 * * *", Command: "/bin/true",
+		Schedule: "0 3 * * *", Command: "/bin/true",
 	})
 	assertTimeout(t, err)
 }
@@ -33,7 +33,7 @@ func TestTimeoutFaultAdd(t *testing.T) {
 func TestTimeoutFaultRemove(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultTimeout)
-	_, err := store.Remove(context.Background(), "daily")
+	_, err := store.Remove(context.Background(), 0)
 	assertTimeout(t, err)
 }
 

@@ -2,25 +2,63 @@ package croncore
 
 import "strings"
 
-// maxNameLen / maxCmdLen 是任务定义的长度上限，防止恶意超长入参。
+// maxCommandLen / maxCommentLen 是命令与注释的长度上限，防止恶意超长入参。
 const (
-	maxNameLen = 64
-	maxCmdLen  = 4096
+	maxCommandLen = 512
+	maxCommentLen = 512
 )
 
-// ValidateName 校验任务名：非空、长度受限、只含字母数字下划线与连字符。
-func ValidateName(name string) error {
-	if name == "" || len(name) > maxNameLen {
-		return wrap(ErrInvalidParam, "name 必须为 1-64 字符")
+// ValidateCommand 校验命令：拒绝空命令、换行、回车与超长内容。
+// 换行/回车是重点：crontab 按行解析，允许它们等于允许注入多条任务。
+// 命令只作为字符串存储，不解析、不执行。
+func ValidateCommand(command string) error {
+	if strings.ContainsAny(command, "\r\n\x00") {
+		return wrap(ErrInvalidParam, "command 不得包含换行或回车")
 	}
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '_' || r == '-' {
-			continue
-		}
-		return wrap(ErrInvalidParam, "name 仅允许字母数字下划线与连字符")
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return wrap(ErrInvalidParam, "command 不能为空")
+	}
+	if len(trimmed) > maxCommandLen {
+		return wrap(ErrInvalidParam, "command 不得超过 512 字节")
 	}
 	return nil
+}
+
+// ValidateComment 校验注释：允许为空，但不得含换行/回车（防止注释行注入）。
+func ValidateComment(comment string) error {
+	if strings.ContainsAny(comment, "\r\n\x00") {
+		return wrap(ErrInvalidParam, "comment 不得包含换行或回车")
+	}
+	if len(strings.TrimSpace(comment)) > maxCommentLen {
+		return wrap(ErrInvalidParam, "comment 不得超过 512 字节")
+	}
+	return nil
+}
+
+// cleanCommand 校验后返回去掉首尾空白的命令，供写回 crontab 使用。
+func cleanCommand(command string) (string, error) {
+	if err := ValidateCommand(command); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(command), nil
+}
+
+// cleanSchedule 归一化空白并复用 5 段语法校验。
+func cleanSchedule(schedule string) (string, error) {
+	schedule = strings.Join(strings.Fields(schedule), " ")
+	if err := ValidateSchedule(schedule); err != nil {
+		return "", err
+	}
+	return schedule, nil
+}
+
+// cleanComment 校验后返回去掉首尾空白的注释；空注释视为无注释。
+func cleanComment(comment string) (string, error) {
+	if err := ValidateComment(comment); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(comment), nil
 }
 
 // ValidateSchedule 只做 5 段 crontab 语法校验，不计算触发时间、不调度。

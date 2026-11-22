@@ -1,8 +1,7 @@
 package croncore
 
 import (
-	"context"
-	"errors"
+	"strings"
 	"testing"
 )
 
@@ -11,9 +10,9 @@ func TestValidateSchedule(t *testing.T) {
 		"0 3 * * *", "*/5 * * * *", "0 0 1 1 0", "0,15,30,45 * * * *",
 		"10-20 3 * * 1-5", "0 3 * * 7", "0 3 1,15 * *",
 	}
-	for _, s := range valid {
-		if err := ValidateSchedule(s); err != nil {
-			t.Errorf("合法 schedule %q 被拒绝: %v", s, err)
+	for _, schedule := range valid {
+		if err := ValidateSchedule(schedule); err != nil {
+			t.Errorf("合法 schedule %q 被拒绝: %v", schedule, err)
 		}
 	}
 	invalid := []string{
@@ -21,94 +20,91 @@ func TestValidateSchedule(t *testing.T) {
 		"0 3 0 * *", "0 3 * 13 *", "0 3 * * 8", "a 3 * * *",
 		"0 3 * * */0", "0 3 * 1-12-5 *", "0 3 * * 5-1",
 	}
-	for _, s := range invalid {
-		if err := ValidateSchedule(s); err == nil {
-			t.Errorf("非法 schedule %q 被接受", s)
+	for _, schedule := range invalid {
+		if err := ValidateSchedule(schedule); err == nil {
+			t.Errorf("非法 schedule %q 被接受", schedule)
 		}
 	}
 }
 
-func TestValidateName(t *testing.T) {
-	if err := ValidateName("backup_daily-1"); err != nil {
-		t.Errorf("合法 name 被拒绝: %v", err)
+func TestValidateCommand(t *testing.T) {
+	valid := []string{"/usr/bin/backup --flag", "echo hi", strings.Repeat("x", 512)}
+	for _, command := range valid {
+		if err := ValidateCommand(command); err != nil {
+			t.Errorf("合法 command %q 被拒绝: %v", command, err)
+		}
 	}
-	for _, bad := range []string{"", "has space", "a/b", ".."} {
-		if err := ValidateName(bad); err == nil {
-			t.Errorf("非法 name %q 被接受", bad)
+	invalid := []string{
+		"", "   ", "echo a\necho b", "echo a\r", "\necho a",
+		strings.Repeat("x", 513),
+	}
+	for _, command := range invalid {
+		if err := ValidateCommand(command); err == nil {
+			t.Errorf("非法 command %q 被接受", command)
 		}
 	}
 }
 
-// TestAddListRemoveHappyPath 验证方法级 happy path 与结构化结果。
-func TestAddListRemoveHappyPath(t *testing.T) {
-	s := NewStore()
-	ctx := context.Background()
-	if _, err := s.Add(ctx, AddParams{
-		Name: "backup", Schedule: "0 3 * * *", Command: "/usr/bin/backup",
-	}); err != nil {
-		t.Fatalf("Add 失败: %v", err)
+func TestValidateComment(t *testing.T) {
+	if err := ValidateComment(""); err != nil {
+		t.Errorf("空 comment 应允许: %v", err)
 	}
-	result, err := s.List(ctx)
-	if err != nil {
-		t.Fatalf("List 失败: %v", err)
+	if err := ValidateComment("daily backup"); err != nil {
+		t.Errorf("合法 comment 被拒绝: %v", err)
 	}
-	if result.Count != 1 || len(result.Jobs) != 1 || result.Jobs[0].Name != "backup" {
-		t.Fatalf("List 结果不符: %+v", result)
-	}
-	if len(result.Logs) == 0 {
-		t.Fatal("Add 未写入执行日志")
-	}
-	if _, err := s.Remove(ctx, "backup"); err != nil {
-		t.Fatalf("Remove 失败: %v", err)
-	}
-	result, _ = s.List(ctx)
-	if result.Count != 0 {
-		t.Fatalf("Remove 后仍有任务: %d", result.Count)
+	for _, comment := range []string{"a\nb", "a\rb", strings.Repeat("x", 513)} {
+		if err := ValidateComment(comment); err == nil {
+			t.Errorf("非法 comment %q 被接受", comment)
+		}
 	}
 }
 
-// TestAddDuplicate 验证重复添加返回 duplicate=true 而非报错。
-func TestAddDuplicate(t *testing.T) {
-	s := NewStore()
-	ctx := context.Background()
-	p := AddParams{Name: "dup", Schedule: "0 3 * * *", Command: "true"}
-	_, _ = s.Add(ctx, p)
-	r, err := s.Add(ctx, p)
-	if err != nil {
-		t.Fatalf("重复 Add 不应报错: %v", err)
+const sampleCrontab = `# top level comment
+MAILTO=root
+
+# daily backup
+0 3 * * * /usr/bin/backup --flag
+*/5 * * * * /bin/echo hi
+@reboot /bin/boot
+not a cron line
+`
+
+func TestParseCrontab(t *testing.T) {
+	parsed := parseCrontab(sampleCrontab)
+	entries := parsed.result()
+	if len(entries) != 2 {
+		t.Fatalf("应解析出 2 条任务，实际 %d: %+v", len(entries), entries)
 	}
-	if !r.Duplicate {
-		t.Fatal("重复 Add 未标记 duplicate")
+	first := entries[0]
+	if first.Index != 0 || first.Schedule != "0 3 * * *" ||
+		first.Command != "/usr/bin/backup --flag" || first.Comment != "daily backup" {
+		t.Fatalf("第一条解析不符: %+v", first)
+	}
+	if first.Raw != "0 3 * * * /usr/bin/backup --flag" {
+		t.Fatalf("raw 未保留原文: %q", first.Raw)
+	}
+	if entries[1].Comment != "" || entries[1].Schedule != "*/5 * * * *" {
+		t.Fatalf("第二条解析不符: %+v", entries[1])
 	}
 }
 
-// TestRemoveNotFound 验证删除不存在的任务返回 ErrNotFound。
-func TestRemoveNotFound(t *testing.T) {
-	s := NewStore()
-	_, err := s.Remove(context.Background(), "ghost")
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("期望 ErrNotFound，实际 %v", err)
+func TestSplitEntryRejectsNonEntries(t *testing.T) {
+	for _, line := range []string{
+		"MAILTO=root", "@reboot /bin/boot", "0 3 * *", "0 3 * * *", "not a cron line",
+	} {
+		if _, _, ok := splitEntry(line); ok {
+			t.Errorf("非任务行被当作任务: %q", line)
+		}
 	}
 }
 
-// TestNoScheduler 锁定设计边界：croncore 不产生执行记录，执行记录只能由
-// 宿主通过 RecordExecution 上报，证明插件本身不触发任务（零调度）。
-func TestNoScheduler(t *testing.T) {
-	s := NewStore()
-	_, _ = s.Add(context.Background(), AddParams{
-		Name: "job", Schedule: "* * * * *", Command: "true",
-	})
-	r, _ := s.List(context.Background())
-	if len(r.Executions) != 0 {
-		t.Fatalf("插件不应自行产生执行记录，实际 %d 条", len(r.Executions))
+func TestJoinSplitLinesRoundTrip(t *testing.T) {
+	content := "a\nb\n\nc\n"
+	lines := splitLines(content)
+	if got := joinLines(lines); got != content {
+		t.Fatalf("往返不一致: %q != %q", got, content)
 	}
-	if err := s.RecordExecution(context.Background(), Execution{
-		ID: "1", JobName: "job", Status: "ok",
-	}); err != nil {
-		t.Fatalf("RecordExecution 失败: %v", err)
-	}
-	r, _ = s.List(context.Background())
-	if len(r.Executions) != 1 {
-		t.Fatal("宿主上报的执行记录未写入")
+	if joinLines(nil) != "" {
+		t.Fatal("空行集合应输出空文本")
 	}
 }

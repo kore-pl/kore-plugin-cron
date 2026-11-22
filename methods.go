@@ -5,25 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
-	"runtime"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pengtang1024/kore-plugin-cron/internal/croncore"
 	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
-// statusResult 是 kore.ping 的结果（PLUGIN-PROTOCOL §7.1）。
-type statusResult struct {
-	Status     string `json:"status"`
-	UptimeS    int64  `json:"uptime_s"`
-	Goroutines int    `json:"goroutines"`
-	RSSKB      int64  `json:"rss_kb"`
+// requestTimeout 是单个请求的处理预算：用 context.WithTimeout，defer cancel 释放。
+const requestTimeout = 5 * time.Second
+
+// removeParams / replaceParams 用指针区分“缺省 index”和“显式 index=0”。
+type removeParams struct {
+	Index *int `json:"index"`
 }
 
-// requestTimeout 是单个请求的处理预算：用 context.WithTimeout，defer cancel 释放。
-const requestTimeout = 5 * 1e9 // 5s in nanoseconds
+type replaceParams struct {
+	Index    *int   `json:"index"`
+	Schedule string `json:"schedule"`
+	Command  string `json:"command"`
+}
 
 // dispatch 把请求分发为响应帧；第二个返回值表示收到 kore.shutdown。
 func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, logger *slog.Logger) (*pluginapi.Response, bool) {
@@ -34,9 +35,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 		logger.Info("收到 kore.shutdown，优雅退出")
 		return response, true
 	case "kore.ping":
-		response.Result = encode(statusResult{
-			Status: "ready", Goroutines: runtime.NumGoroutine(), RSSKB: rssKB(),
-		})
+		response.Result = encode(pingResult())
 		return response, false
 	case "kore.reload":
 		response.Result = json.RawMessage(`{"ok":true,"config_digest":""}`)
@@ -60,7 +59,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 func cronVerb(method, id string) (string, bool) {
 	verb := strings.TrimPrefix(method, id+".")
 	switch verb {
-	case "list", "add", "remove":
+	case "list", "add", "remove", "replace":
 		return verb, true
 	default:
 		return "", false
@@ -89,11 +88,22 @@ func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, st
 		response.Result = encode(result)
 		return nil
 	case "remove":
-		p, perr := parseRemoveParams(params)
+		index, perr := parseRemoveParams(params)
 		if perr != nil {
 			return perr
 		}
-		result, err := store.Remove(ctx, p.Name)
+		result, err := store.Remove(ctx, index)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
+	case "replace":
+		p, perr := parseReplaceParams(params)
+		if perr != nil {
+			return perr
+		}
+		result, err := store.Replace(ctx, p)
 		if err != nil {
 			return mapCoreError(err)
 		}
@@ -113,13 +123,28 @@ func parseAddParams(raw json.RawMessage) (croncore.AddParams, *pluginapi.Error) 
 	return p, nil
 }
 
-// parseRemoveParams 校验 cron.remove 入参必须是 JSON 对象。
-func parseRemoveParams(raw json.RawMessage) (croncore.RemoveParams, *pluginapi.Error) {
-	var p croncore.RemoveParams
+// parseRemoveParams 解析 cron.remove 的必填 index。
+func parseRemoveParams(raw json.RawMessage) (int, *pluginapi.Error) {
+	var p removeParams
 	if perr := decodeObject(raw, &p); perr != nil {
-		return p, perr
+		return 0, perr
 	}
-	return p, nil
+	if p.Index == nil {
+		return 0, methodError(pluginapi.E_INVALID, "index 必填")
+	}
+	return *p.Index, nil
+}
+
+// parseReplaceParams 解析 cron.replace 的必填 index / schedule / command。
+func parseReplaceParams(raw json.RawMessage) (croncore.ReplaceParams, *pluginapi.Error) {
+	var p replaceParams
+	if perr := decodeObject(raw, &p); perr != nil {
+		return croncore.ReplaceParams{}, perr
+	}
+	if p.Index == nil {
+		return croncore.ReplaceParams{}, methodError(pluginapi.E_INVALID, "index 必填")
+	}
+	return croncore.ReplaceParams{Index: *p.Index, Schedule: p.Schedule, Command: p.Command}, nil
 }
 
 // decodeObject 确保 raw 是 JSON 对象并反序列化到 dst。
@@ -142,12 +167,8 @@ func mapCoreError(err error) *pluginapi.Error {
 		return methodError(pluginapi.E_INVALID, err.Error())
 	case errors.Is(err, croncore.ErrNotFound):
 		return methodError(pluginapi.E_NOTFOUND, err.Error())
-	case errors.Is(err, croncore.ErrTimeout):
+	case errors.Is(err, croncore.ErrTimeout), errors.Is(err, croncore.ErrInterrupted):
 		return methodError(pluginapi.E_UPSTREAM, err.Error())
-	case errors.Is(err, croncore.ErrInterrupted):
-		return methodError(pluginapi.E_UPSTREAM, err.Error())
-	case errors.Is(err, croncore.ErrIO), errors.Is(err, croncore.ErrResource):
-		return methodError(pluginapi.E_INTERNAL, err.Error())
 	default:
 		return methodError(pluginapi.E_INTERNAL, err.Error())
 	}
@@ -165,24 +186,4 @@ func encode(v any) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return data
-}
-
-// rssKB 读取 /proc/self/statm 的常驻页并换算为 KiB；非 Linux 或失败返回 0。
-func rssKB() int64 {
-	if runtime.GOOS != "linux" {
-		return 0
-	}
-	data, err := os.ReadFile("/proc/self/statm")
-	if err != nil {
-		return 0
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) < 2 {
-		return 0
-	}
-	pages, err := strconv.ParseInt(fields[1], 10, 64)
-	if err != nil {
-		return 0
-	}
-	return pages * int64(os.Getpagesize()) / 1024
 }

@@ -1,74 +1,54 @@
-// Package croncore 实现 cron 插件的业务逻辑：任务定义、执行记录与日志。
+// Package croncore 实现 cron 插件的业务逻辑：通过系统 crontab 命令管理
+// 当前用户的任务条目（不直接改 /var/spool/cron）。
 //
-// 本包纯被动：所有方法由宿主请求驱动，不含任何后台 goroutine 或周期定时器。
-// 调度由宿主调度器 / systemd timer 依据 info.json 的 triggers 触发。
+// 本包纯被动：所有方法由宿主请求驱动，不含任何后台 goroutine 或周期定时器；
+// 实际调度由系统 cron 负责，插件只管理配置，因此零 ticker（G-19）。
 package croncore
 
-import "time"
-
-// Job 是一条任务定义。Schedule 只做语法校验，不解析为执行计划。
-type Job struct {
-	Name     string `json:"name"`
+// Entry 是一条 crontab 任务。Index 为本次 list 结果中的 0 起下标，
+// Comment 是紧邻任务行上方的注释，Raw 是原始行文本。
+type Entry struct {
+	Index    int    `json:"index"`
 	Schedule string `json:"schedule"`
 	Command  string `json:"command"`
-	Enabled  bool   `json:"enabled"`
+	Comment  string `json:"comment,omitempty"`
+	Raw      string `json:"raw"`
 }
 
-// Execution 是一条执行记录，由宿主上报的执行结果写入，不由本插件产生。
-type Execution struct {
-	ID         string `json:"id"`
-	JobName    string `json:"job_name"`
-	Status     string `json:"status"`
-	ExitCode   int    `json:"exit_code"`
-	DurationMS int64  `json:"duration_ms"`
-	StartedAt  string `json:"started_at"`
-}
-
-// LogEntry 是一条执行日志。
-type LogEntry struct {
-	Timestamp string `json:"timestamp"`
-	JobName   string `json:"job_name"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
-}
-
-// ListResult 是 cron.list 的结构化结果。
+// ListResult 是 cron.list 的结构化结果；无 crontab 时 Entries 为空数组。
 type ListResult struct {
-	Jobs       []Job       `json:"jobs"`
-	Executions []Execution `json:"executions"`
-	Logs       []LogEntry  `json:"logs"`
-	Count      int         `json:"count"`
+	Entries []Entry `json:"entries"`
+	Count   int     `json:"count"`
 }
 
 // AddParams 是 cron.add 的入参。
 type AddParams struct {
-	Name     string `json:"name"`
 	Schedule string `json:"schedule"`
 	Command  string `json:"command"`
-	Enabled  *bool  `json:"enabled"`
+	Comment  string `json:"comment,omitempty"`
 }
 
-// AddResult 是 cron.add 的结构化结果。
+// AddResult 是 cron.add 的结构化结果：新条目 + 写前备份路径。
 type AddResult struct {
-	Name      string `json:"name"`
-	Schedule  string `json:"schedule"`
-	Command   string `json:"command"`
-	Enabled   bool   `json:"enabled"`
-	Duplicate bool   `json:"duplicate"`
-}
-
-// RemoveParams 是 cron.remove 的入参。
-type RemoveParams struct {
-	Name string `json:"name"`
+	Entry      Entry  `json:"entry"`
+	BackupPath string `json:"backup_path"`
 }
 
 // RemoveResult 是 cron.remove 的结构化结果。
 type RemoveResult struct {
-	Name    string `json:"name"`
-	Removed bool   `json:"removed"`
+	Removed    Entry  `json:"removed"`
+	BackupPath string `json:"backup_path"`
 }
 
-// nowRFC3339 返回统一时间戳格式；注入时钟由调用方负责，本包不启动定时器。
-func nowRFC3339() string {
-	return time.Now().UTC().Format(time.RFC3339)
+// ReplaceParams 是 cron.replace 的入参：index 为 0 起下标。
+type ReplaceParams struct {
+	Index    int    `json:"index"`
+	Schedule string `json:"schedule"`
+	Command  string `json:"command"`
+}
+
+// ReplaceResult 是 cron.replace 的结构化结果。
+type ReplaceResult struct {
+	Entry      Entry  `json:"entry"`
+	BackupPath string `json:"backup_path"`
 }

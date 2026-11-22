@@ -23,7 +23,7 @@ func TestKillFaultAdd(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultKilled)
 	_, err := store.Add(context.Background(), croncore.AddParams{
-		Name: "backup", Schedule: "0 3 * * *", Command: "/usr/bin/backup",
+		Schedule: "0 3 * * *", Command: "/usr/bin/backup",
 	})
 	assertInterrupted(t, err)
 }
@@ -31,7 +31,7 @@ func TestKillFaultAdd(t *testing.T) {
 func TestKillFaultRemove(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultKilled)
-	_, err := store.Remove(context.Background(), "backup")
+	_, err := store.Remove(context.Background(), 0)
 	assertInterrupted(t, err)
 }
 
@@ -46,8 +46,8 @@ func TestKillFaultDoesNotPanic(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultKilled)
 	_, _ = store.List(context.Background())
-	_, _ = store.Add(context.Background(), croncore.AddParams{Name: "x", Schedule: "* * * * *", Command: "true"})
-	_, _ = store.Remove(context.Background(), "x")
+	_, _ = store.Add(context.Background(), croncore.AddParams{Schedule: "* * * * *", Command: "true"})
+	_, _ = store.Remove(context.Background(), 0)
 }
 
 func assertInterrupted(t *testing.T, err error) {

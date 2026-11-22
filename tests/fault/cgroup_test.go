@@ -23,7 +23,7 @@ func TestCgroupFaultAdd(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultCgroup)
 	_, err := store.Add(context.Background(), croncore.AddParams{
-		Name: "repair", Schedule: "*/5 * * * *", Command: "/usr/local/bin/repair",
+		Schedule: "*/5 * * * *", Command: "/usr/local/bin/repair",
 	})
 	assertResource(t, err)
 }
@@ -31,7 +31,7 @@ func TestCgroupFaultAdd(t *testing.T) {
 func TestCgroupFaultRemove(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultCgroup)
-	_, err := store.Remove(context.Background(), "repair")
+	_, err := store.Remove(context.Background(), 0)
 	assertResource(t, err)
 }
 
@@ -45,8 +45,8 @@ func TestCgroupFaultNoPanic(t *testing.T) {
 	store := croncore.NewStore()
 	store.InjectFault(croncore.FaultCgroup)
 	_, _ = store.List(context.Background())
-	_, _ = store.Add(context.Background(), croncore.AddParams{Name: "x", Schedule: "* * * * *", Command: "true"})
-	_, _ = store.Remove(context.Background(), "x")
+	_, _ = store.Add(context.Background(), croncore.AddParams{Schedule: "* * * * *", Command: "true"})
+	_, _ = store.Remove(context.Background(), 0)
 }
 
 // TestCgroupFaultClearedRecovers 断言清除故障后方法恢复正常，证明故障是
