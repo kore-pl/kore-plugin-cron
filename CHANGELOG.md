@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 (2026-11-24)
+
+- feat(cron): 新增 `cron.migrate`（`system:admin`，幂等）——把宿主 crontab 里指向 `<pluginRoot>/<id>/<版本>/bin/<id>` 的 wrapper 行迁移到稳定路径 `current/bin/<id>`，返回 `rewritten` / `backup_path` / `stable_path` / `stable_ready` / `skipped` / `note`；与启动期迁移共用同一实现。
+- feat(cron): `info.json` 声明 `post_upgrade: "cron.migrate"`——内核在安装/升级重载成功后按声明调用一次，**升级后即使插件从未被打开/调用也会完成迁移**，消灭「crontab 继续跑旧版本二进制且无任何提示」的静默失效；启动期迁移保留为兜底（老内核忽略该字段时行为不变）。
+- docs(cron): README 方法表补 `cron.migrate` 与升级后置动作说明；版本 0.7.0。
+
 ## 0.6.0 (2026-11-24)
 
 - fix(cron): crontab 不再写死版本目录——shell / http 的 wrapper 命令改用稳定路径 `<pluginRoot>/<id>/current/bin/<id>`（内核 installer 维护的 `current` 符号链接，原子切换），升级后系统 cron 自动执行新版本，不再依赖“记得重写 crontab”。

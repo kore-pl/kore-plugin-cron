@@ -136,3 +136,56 @@ func TestToggleDispatch(t *testing.T) {
 		t.Fatalf("越界应返回 E_INVALID: %+v", outOfRange)
 	}
 }
+
+// TestPostUpgradeHookDeclaredAndImplemented 守护「声明即实现」：
+// info.json 的 post_upgrade 必须指向真实方法，否则内核调用得到 E_NOTFOUND，
+// 迁移会再次退化成静默不执行（这正是本次修复要消灭的失效模式）。
+func TestPostUpgradeHookDeclaredAndImplemented(t *testing.T) {
+	raw, err := os.ReadFile("info.json")
+	if err != nil {
+		t.Fatalf("读取 info.json 失败: %v", err)
+	}
+	var info struct {
+		PostUpgrade        string            `json:"post_upgrade"`
+		Methods            []string          `json:"methods"`
+		MethodCapabilities map[string]string `json:"method_capabilities"`
+	}
+	if err := json.Unmarshal(raw, &info); err != nil {
+		t.Fatalf("解析 info.json 失败: %v", err)
+	}
+	if info.PostUpgrade != "cron.migrate" {
+		t.Fatalf("post_upgrade 应声明 cron.migrate，实际 %q", info.PostUpgrade)
+	}
+	if info.MethodCapabilities[info.PostUpgrade] != "system:admin" {
+		t.Fatalf("post_upgrade 指向的方法必须显式声明能力，实际 %v", info.MethodCapabilities)
+	}
+	declared := false
+	for _, method := range info.Methods {
+		if method == info.PostUpgrade {
+			declared = true
+		}
+	}
+	if !declared {
+		t.Fatalf("post_upgrade=%q 未出现在 methods 清单里: %v", info.PostUpgrade, info.Methods)
+	}
+
+	fake, err := cronfake.Install(t.TempDir())
+	if err != nil {
+		t.Fatalf("安装假 crontab 失败: %v", err)
+	}
+	fake.Use(t)
+	if err := fake.Seed("0 3 * * * echo hello\n"); err != nil {
+		t.Fatalf("预置 crontab 失败: %v", err)
+	}
+	store := croncore.NewStore()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var migrated croncore.MigrateResult
+	if err := json.Unmarshal(mustOK(t, call(t, store, logger, info.PostUpgrade, `{}`)), &migrated); err != nil {
+		t.Fatalf("解析迁移结果失败: %v", err)
+	}
+	// 测试二进制不在 <pluginRoot>/<id>/<version>/bin/<id> 布局里：
+	// 必须「跳过并说明原因」，不能报错、也不能假装迁移成功。
+	if migrated.Note == "" {
+		t.Fatalf("非安装布局必须返回跳过原因，实际 %+v", migrated)
+	}
+}

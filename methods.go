@@ -20,6 +20,9 @@ const (
 	runTimeout      = 60 * time.Second
 	runVerbTimeout  = runTimeout + 5*time.Second
 	logsVerbTimeout = 15 * time.Second
+	// migrateVerbTimeout 是 cron.migrate 的预算：读改写宿主 crontab 并备份，
+	// 与内核的 post_upgrade 调用上限（15s）对齐，避免内核先超时而插件仍在写。
+	migrateVerbTimeout = 15 * time.Second
 )
 
 // verbTimeout 返回各动词的处理预算。
@@ -29,6 +32,8 @@ func verbTimeout(verb string) time.Duration {
 		return runVerbTimeout
 	case "logs":
 		return logsVerbTimeout
+	case "migrate":
+		return migrateVerbTimeout
 	case "batch":
 		return 120 * time.Second
 	default:
@@ -80,7 +85,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 func cronVerb(method, id string) (string, bool) {
 	verb := strings.TrimPrefix(method, id+".")
 	switch verb {
-	case "list", "add", "remove", "replace", "logs", "run", "enable", "disable", "templates", "batch":
+	case "list", "add", "remove", "replace", "logs", "run", "enable", "disable", "templates", "batch", "migrate":
 		return verb, true
 	default:
 		return "", false
@@ -90,6 +95,15 @@ func cronVerb(method, id string) (string, bool) {
 // handleCronVerb 执行 cron 方法，把 croncore 的业务错误映射为协议错误码。
 func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, store *croncore.Store, response *pluginapi.Response) *pluginapi.Error {
 	switch verb {
+	case "migrate":
+		// 升级后置动作（info.json.post_upgrade）：把存量 crontab 行从版本目录改写到
+		// 稳定路径。幂等：已是稳定路径时不写盘、不产生备份。
+		result, err := store.MigrateStaleBinaries(ctx)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
 	case "list":
 		result, err := store.List(ctx)
 		if err != nil {

@@ -25,6 +25,7 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 | `cron.run` | 同步执行**已注册任务**的命令，返回 `{started, output, exit_code, duration_ms}` |
 | `cron.templates` | 只读内置模板（4 条：每日备份 / 每小时健康检查 / 每周清理日志 / 每月证书检查），返回 `{templates[], count, note}`；不写 crontab、无副作用 |
 | `cron.batch` | 批量动作 `{action: enable\|disable\|remove\|run, ids:[0 起下标]}`：一次最多 50 条，逐条执行、部分失败不回滚，返回 `{action,total,succeeded[],failed[],note?}` |
+| `cron.migrate` | 升级后置动作（幂等）：把 crontab 里指向版本目录的 wrapper 行迁移到稳定路径，返回 `{rewritten,backup_path?,stable_path?,stable_ready,skipped?,note?}`；`rewritten=0` 表示无需迁移，不写盘 |
 
 ### 数据形状
 
@@ -138,9 +139,13 @@ crontab 条目的 wrapper 命令只写**稳定路径** `<pluginRoot>/<id>/curren
 ### 方法级能力（info.json）
 
 `cron.run` / `cron.add` / `cron.remove` / `cron.replace` / `cron.enable` /
-`cron.disable` / `cron.batch` 声明为 `system:admin`，`cron.list` / `cron.logs` /
+`cron.disable` / `cron.batch` / `cron.migrate` 声明为 `system:admin`，`cron.list` / `cron.logs` /
 `cron.templates` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
 `method_capabilities` 校验并决定是否落审计（只读方法不落 `invoke.*` 审计）。
+
+### 升级后置动作（post_upgrade → cron.migrate）
+
+`info.json` 声明 `post_upgrade: "cron.migrate"`：内核在**安装/升级重载成功后**按这条声明调用一次，因此升级后即使插件从未被打开或调用，存量 crontab 也会被迁移到稳定路径——不再出现「系统 cron 继续执行旧版本二进制且没有任何提示」。内核只认识「清单里声明的动作」，不认识 cron 与迁移语义（薄壳边界）；调用失败不会让安装失败，但会写告警中心。插件启动时的迁移保留为兜底（老内核忽略 `post_upgrade` 时行为不变）。
 
 ### 模板与批量（cron.templates / cron.batch）
 
