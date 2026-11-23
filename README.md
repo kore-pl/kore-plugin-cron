@@ -172,3 +172,22 @@ mtime/owner 保证确定性；`info.json.size_bytes` 按真实 `.tar.gz` 字节�
 连续两次 `make dist` 的 sha256 逐字一致。
 
 MIT License — pengtang1024
+
+<!-- oss:begin -->
+## 开源与贡献
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
+
+本仓库是 **kore** 的 `计划任务插件`（id `cron`），独立仓库、独立版本线。内核与协议见 [kore](https://github.com/kore-pl/kore)。
+
+- **许可**：MIT（inbound = outbound，不要求 CLA）；提交用 `git commit -s` 签 DCO。
+- **贡献**：[CONTRIBUTING.md](CONTRIBUTING.md)（构建、门禁、发版、边界）。
+- **安全**：[SECURITY.md](SECURITY.md)——漏洞不要开公开 issue。
+- **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
+- **兼容性**：`protocol: kore.plugin.v1` · `requires_kore: >=0.1.0 <0.2.0` · `lifecycle: lazy` · 深度等级 `production`。
+- **验证方式**：本地 `make check`（插件仓不配 CI；发布前 `make dist` 连跑两次核对 sha 一致）。
+- **发布产物**：`make dist` → `dist/cron-0.4.1.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
+- **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
+
+<!-- oss:end -->
