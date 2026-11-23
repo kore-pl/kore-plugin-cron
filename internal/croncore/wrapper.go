@@ -1,7 +1,6 @@
 package croncore
 
 import (
-	"os"
 	"strings"
 	"unicode/utf8"
 )
@@ -58,9 +57,8 @@ func truncateRunes(value string, max int) string {
 //
 // ok=false 表示包装不可用（取不到自身路径或生成的行过长），调用方应退化为
 // 原始命令（任务仍能执行，只是没有逐任务执行日志），并在结果里如实说明。
-func buildWrappedTask(schedule string, spec taskSpec, comment string) (line, metaLine, name string, ok bool) {
-	bin, err := os.Executable()
-	if err != nil || bin == "" {
+func buildWrappedTask(bin, schedule string, spec taskSpec, comment string) (line, metaLine, name string, ok bool) {
+	if bin == "" {
 		return "", "", deriveTaskName(comment, spec.command), false
 	}
 	name = deriveTaskName(comment, spec.command)

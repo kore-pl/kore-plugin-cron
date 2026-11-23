@@ -78,6 +78,27 @@ curl 也会被识别为 http。`cron.replace` 仍只接收 schedule + command（
 - **没有日志源时诚实返回** `available=false` + `source:"none"` + `note`（说明原因与
   "把命令重定向到日志文件"的补救方式），不把"读不到日志"伪装成"没有执行"。
 
+### 稳定二进制路径与升级迁移（0.6.0+）
+
+crontab 条目的 wrapper 命令只写**稳定路径** `<pluginRoot>/<id>/current/bin/<id>`：
+内核 installer 在 `<pluginRoot>/<id>/current` 维护一个指向当前版本目录的**相对符号链接**，
+安装 / 升级时用临时链接 + `rename` 原子切换。因此升级后系统 cron 自动执行新版本，
+不依赖“还记得重写 crontab”。
+
+- **存量迁移**：旧版本写入的 `<pluginRoot>/<id>/<版本>/bin/<id>` 条目由插件启动时自动迁移。
+  只改指向本插件的 wrapper 行，停用标记 / schedule / 注释 / runlog / 任务名 / 命令
+  逐字保留；写前先备份；认不出的行**原样保留并 WARN**（不猜测重写）；迁移幂等。
+- **降级态可见**：稳定路径不存在时（旧内核未建 `current` 链接），新任务退化为当前版本
+  路径并在 `cron.add` 的 `note` 说明；`cron.list` 返回 `stable_path_state:"missing"` + warning。
+- **失败可见**：`cron.list` 每条 wrapper 条目带 `binary_status`：
+  `stable`（稳定路径且存在）/ `ok`（存在但不是稳定路径）/ `stale`（指向旧版本）/
+  `missing`（二进制不存在，系统 cron 到点会静默失败）。`stale` / `missing` 计入
+  `stale_count` 并配 `binary_note` 可操作提示。
+
+```json
+{"index":0,"wrapped":true,"binary":"/var/lib/kore/plugins/cron/current/bin/cron","binary_status":"stale","binary_note":"这条任务指向旧版本 0.4.1（当前运行 0.6.0），升级后仍会执行旧二进制，请用 cron.replace 重新保存该条（或重装插件）；插件下次启动也会自动迁移到 /var/lib/kore/plugins/cron/current/bin/cron"}
+```
+
 ### 启停（cron.enable / cron.disable）
 
 入参都是 `{"index":0}`（与 `cron.remove` / `cron.replace` 同一套 0 起下标）。

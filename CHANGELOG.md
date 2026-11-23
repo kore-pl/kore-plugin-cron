@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 (2026-11-24)
+
+- fix(cron): crontab 不再写死版本目录——shell / http 的 wrapper 命令改用稳定路径 `<pluginRoot>/<id>/current/bin/<id>`（内核 installer 维护的 `current` 符号链接，原子切换），升级后系统 cron 自动执行新版本，不再依赖“记得重写 crontab”。
+- feat(cron): 插件启动时迁移存量 crontab——把指向 `<pluginRoot>/<id>/<旧版本>/bin/<id>` 的 wrapper 行改写到稳定路径；只改本插件行，保留停用标记 / schedule / 注释 / runlog / 任务名 / 命令逐字不变；写前备份，认不出的行原样保留并计数告警，迁移幂等。
+- feat(cron): `cron.list` 每条 wrapper 条目新增 `binary` / `binary_status`（`stable` / `ok` / `stale` / `missing`）/ `binary_note`，结果新增 `stale_count` / `stable_path` / `stable_path_state`；指向旧版本或二进制不存在时给出可操作文案，失败不再静默。
+- docs(cron): README 补稳定路径、存量迁移、`binary_status` 取值域与降级态说明；版本 0.6.0。
+
 ## 0.5.0 (2026-11-23)
 
 - feat(cron): 新增只读 `cron.templates`：4 个常用模板（每日备份站点 / 每小时健康检查 / 每周清理日志 / 每月证书检查），返回 `{id,name,description,schedule,type,command?,url?,comment?}`，不写 crontab、不执行任何动作。

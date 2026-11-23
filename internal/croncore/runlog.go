@@ -67,10 +67,10 @@ type RunlogParams struct {
 // Available=false 表示还没有任何执行记录（文件不存在）；这不是错误，
 // Note 说明记录由谁写入，避免把"还没跑过"误判成"功能坏了"。
 type RunlogResult struct {
-	Available bool         `json:"available"`
+	Available bool          `json:"available"`
 	Entries   []RunlogEntry `json:"entries"`
-	Count     int          `json:"count"`
-	Note      string       `json:"note,omitempty"`
+	Count     int           `json:"count"`
+	Note      string        `json:"note,omitempty"`
 }
 
 // runlogDirPath 解析日志目录：KORE_CRON_RUNLOG_DIR > <KORE_STATE_DIR>/runlog >

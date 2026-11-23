@@ -8,10 +8,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
+	"time"
 
 	"github.com/pengtang1024/kore-plugin-cron/internal/croncore"
 )
@@ -45,5 +47,25 @@ func run(logger *slog.Logger) error {
 	}
 	logger.Info("hello 完成", "plugin_id", cfg.id, "version", cfg.version)
 	store := croncore.NewStore()
+	// 升级后把存量 crontab 行从版本目录迁移到稳定路径；失败只告警，不影响插件服务
+	// （cron.list 仍会逐条报出 binary_status，失败不会静默）。
+	migrateCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	migrateResult, migrateErr := store.MigrateStaleBinaries(migrateCtx)
+	cancel()
+	if migrateErr != nil {
+		logger.Warn("crontab 稳定路径迁移失败，cron.list 会逐条报告二进制状态",
+			"err", migrateErr)
+	} else if migrateResult.Rewritten > 0 {
+		logger.Info("已把 crontab 存量条目迁移到稳定二进制路径",
+			"rewritten", migrateResult.Rewritten, "backup", migrateResult.BackupPath,
+			"skipped", migrateResult.Skipped)
+	}
+	if migrateErr == nil && migrateResult != nil && migrateResult.Skipped > 0 {
+		logger.Warn("crontab 中有疑似本插件 wrapper 但格式无法识别的行，已原样保留",
+			"skipped", migrateResult.Skipped)
+	}
+	if migrateErr == nil && migrateResult != nil && migrateResult.Rewritten == 0 && migrateResult.Note != "" {
+		logger.Info("crontab 稳定路径迁移跳过/降级", "note", migrateResult.Note)
+	}
 	return serve(conn, cfg, store, logger)
 }

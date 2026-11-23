@@ -22,8 +22,37 @@ func (s *Store) List(ctx context.Context) (*ListResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries := parseCrontab(content).result()
-	return &ListResult{Entries: entries, Count: len(entries)}, nil
+	layout, layoutOK := binaryLayoutFrom(executablePath())
+	entries := parseCrontab(content).resultWith(layout, layoutOK)
+	result := &ListResult{Entries: entries, Count: len(entries)}
+	if layoutOK {
+		result.StablePath = layout.stable
+		if fileExists(layout.stable) {
+			result.StablePathState = "ready"
+		} else {
+			result.StablePathState = "missing"
+			result.Warning = appendWarning(result.Warning,
+				"稳定二进制路径 "+layout.stable+" 不存在（内核未建立 current 链接）：新任务会写入当前版本路径，升级后依赖启动迁移")
+		}
+	}
+	for _, entry := range entries {
+		if entry.BinaryStatus == "stale" || entry.BinaryStatus == "missing" {
+			result.StaleCount++
+		}
+	}
+	if result.StaleCount > 0 {
+		result.Warning = appendWarning(result.Warning,
+			itoa(result.StaleCount)+" 条任务指向的二进制不可用或为旧版本（见 entry.binary_status / binary_note）")
+	}
+	return result, nil
+}
+
+// appendWarning 把多条提示拼成一行（用中文分号分隔），避免后一条覆盖前一条。
+func appendWarning(current, extra string) string {
+	if current == "" {
+		return extra
+	}
+	return current + "；" + extra
 }
 
 // Add 校验入参后读现有 crontab、追加条目并整份写回；写前先备份。
@@ -61,11 +90,14 @@ func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
 	}
 	// 包装命令让系统 cron 的每次执行都写 runlog；路径来自插件自身与状态目录，
 	// 用户无法控制。命令过长等情况下退化为原始命令（仍可执行，但无逐任务日志）。
-	taskLine, metaLine, taskName, wrapped := buildWrappedTask(schedule, spec, comment)
+	bin := wrapperBinaryPath()
+	taskLine, metaLine, taskName, wrapped := buildWrappedTask(bin.path, schedule, spec, comment)
 	note := ""
 	if !wrapped {
 		taskLine = spec.command
 		note = "任务已写入 crontab，但当前未启用逐任务执行日志（命令过长或取不到插件自身路径）；cron.run 的立即执行仍会记录"
+	} else if bin.layoutOK && !bin.stable {
+		note = migrateNote(bin.layout.stable)
 	}
 
 	s.writeMu.Lock()
@@ -84,6 +116,10 @@ func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
 		Index: len(parsed.entries), Type: spec.typ, Schedule: schedule, Command: spec.command,
 		Comment: comment, Raw: schedule + " " + taskLine, Enabled: true,
 		TaskName: taskName, Wrapped: wrapped,
+	}
+	if wrappedBin, _, ok := splitWrapperCommand(taskLine); ok {
+		entry.Binary = wrappedBin
+		entry.BinaryStatus, entry.BinaryNote = classifyBinary(bin.layout, bin.layoutOK, wrappedBin)
 	}
 	return &AddResult{
 		Type: spec.typ, Entry: &entry, BackupPath: backupPath,

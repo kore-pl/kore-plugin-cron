@@ -40,7 +40,7 @@ func TestWrapperCommandQuotesUserInput(t *testing.T) {
 func TestBuildWrappedTaskFallsBackWhenTooLong(t *testing.T) {
 	t.Setenv("KORE_CRON_RUNLOG_DIR", t.TempDir())
 	long := strings.Repeat("\t", maxCommandLen-1) + "x"
-	_, _, name, ok := buildWrappedTask("0 3 * * *", taskSpec{typ: TypeShell, command: long}, "")
+	_, _, name, ok := buildWrappedTask("/bin/true", "0 3 * * *", taskSpec{typ: TypeShell, command: long}, "")
 	if ok {
 		t.Fatal("超长命令不应声称已包装")
 	}

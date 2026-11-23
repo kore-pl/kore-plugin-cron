@@ -1,7 +1,6 @@
 package croncore
 
 import (
-	"os"
 	"strings"
 )
 
@@ -16,6 +15,9 @@ const DisabledPrefix = "#KORE-DISABLED# "
 type parsedCrontab struct {
 	lines   []string
 	entries []parsedEntry
+	// layout / layoutOK 用于给 Entry 标注二进制状态；resultWith 时注入。
+	layout   binaryLayout
+	layoutOK bool
 }
 
 // parsedEntry 是一条任务行：line 为下标，commentStart 为紧邻其上方连续
@@ -141,8 +143,15 @@ func splitEntry(line string) (schedule, command string, ok bool) {
 	return strings.Join(fields, " "), command, true
 }
 
-// result 生成对外的条目数组，Index 为 0 起下标。
+// result 生成对外的条目数组，Index 为 0 起下标；二进制状态按当前进程的安装布局标注。
 func (p parsedCrontab) result() []Entry {
+	layout, ok := binaryLayoutFrom(executablePath())
+	return p.resultWith(layout, ok)
+}
+
+// resultWith 用指定布局标注二进制状态（供 list 与测试注入）。
+func (p parsedCrontab) resultWith(layout binaryLayout, layoutOK bool) []Entry {
+	p.layout, p.layoutOK = layout, layoutOK
 	entries := make([]Entry, 0, len(p.entries))
 	for i, e := range p.entries {
 		entries = append(entries, p.entryOf(i, e))
@@ -165,11 +174,16 @@ func (p parsedCrontab) entryOf(index int, e parsedEntry) Entry {
 	if taskName == "" {
 		taskName = deriveTaskName(comment, command)
 	}
-	return Entry{
+	entry := Entry{
 		Index: index, Type: typ, Schedule: e.schedule, Command: command,
 		Comment: comment, Raw: raw, Enabled: !e.disabled,
 		TaskName: taskName, Wrapped: wrapped,
 	}
+	if bin, _, ok := splitWrapperCommand(e.command); ok {
+		entry.Binary = bin
+		entry.BinaryStatus, entry.BinaryNote = classifyBinary(p.layout, p.layoutOK, bin)
+	}
+	return entry
 }
 
 // commentOf 返回紧邻任务行上方的注释文本（去掉 # 与前导空格）。
@@ -224,8 +238,8 @@ func (p *parsedCrontab) replaceEntry(idx int, schedule, command string) (Entry, 
 	}
 	e := p.entries[idx]
 	if e.meta != nil {
-		bin, err := os.Executable()
-		if err != nil || bin == "" {
+		bin := wrapperBinaryPath().path
+		if bin == "" {
 			return Entry{}, wrap(ErrIO, "取不到插件自身路径，无法重写包装命令")
 		}
 		meta := taskMeta{V: metaVersion, Type: inferType(command), Name: e.meta.Name, Command: command}

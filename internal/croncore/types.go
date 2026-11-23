@@ -31,6 +31,12 @@ type Entry struct {
 	// 由包装命令执行并会写逐任务执行日志。
 	TaskName string `json:"task_name,omitempty"`
 	Wrapped  bool   `json:"wrapped,omitempty"`
+	// Binary 是 wrapper 行实际执行的插件二进制路径；BinaryStatus 取值域：
+	// stable（稳定路径且存在）/ ok（存在但不是稳定路径）/ stale（指向旧版本目录）/
+	// missing（路径不存在，cron 到点会静默失败）。BinaryNote 给用户可操作提示。
+	Binary       string `json:"binary,omitempty"`
+	BinaryStatus string `json:"binary_status,omitempty"`
+	BinaryNote   string `json:"binary_note,omitempty"`
 }
 
 // ListResult 是 cron.list 的结构化结果；无 crontab 时 Entries 为空数组。
@@ -41,6 +47,13 @@ type ListResult struct {
 	Entries []Entry `json:"entries"`
 	Count   int     `json:"count"`
 	Warning string  `json:"warning,omitempty"`
+	// StaleCount 是 binary_status 为 stale / missing 的条目数（失败可见）。
+	StaleCount int `json:"stale_count,omitempty"`
+	// StablePath 是本插件写 crontab 时使用的稳定二进制路径；
+	// StablePathState 取值 ready / missing（missing 表示内核未建立 current 链接，
+	// 新条目会退化为版本目录路径，升级后依赖启动迁移）。
+	StablePath      string `json:"stable_path,omitempty"`
+	StablePathState string `json:"stable_path_state,omitempty"`
 }
 
 // AddParams 是 cron.add 的入参。
