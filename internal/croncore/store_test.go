@@ -51,7 +51,7 @@ func TestAddListWithComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add 失败: %v", err)
 	}
-	if added.Entry.Index != 0 || added.Entry.Schedule != "0 3 * * *" {
+	if added.Entry == nil || added.Entry.Index != 0 || added.Entry.Schedule != "0 3 * * *" {
 		t.Fatalf("Add 返回条目不符: %+v", added.Entry)
 	}
 	if added.BackupPath == "" {

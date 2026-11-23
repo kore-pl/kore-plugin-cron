@@ -101,7 +101,7 @@ func (p parsedCrontab) result() []Entry {
 	entries := make([]Entry, 0, len(p.entries))
 	for i, e := range p.entries {
 		entries = append(entries, Entry{
-			Index: i, Schedule: e.schedule, Command: e.command,
+			Index: i, Type: inferType(e.command), Schedule: e.schedule, Command: e.command,
 			Comment: p.commentOf(e), Raw: p.lines[e.line],
 		})
 	}
@@ -138,7 +138,7 @@ func (p *parsedCrontab) removeEntry(idx int) (Entry, error) {
 	}
 	e := p.entries[idx]
 	removed := Entry{
-		Index: idx, Schedule: e.schedule, Command: e.command,
+		Index: idx, Type: inferType(e.command), Schedule: e.schedule, Command: e.command,
 		Comment: p.commentOf(e), Raw: p.lines[e.line],
 	}
 	start := e.line
@@ -157,7 +157,7 @@ func (p *parsedCrontab) replaceEntry(idx int, schedule, command string) (Entry, 
 	e := p.entries[idx]
 	p.lines[e.line] = schedule + " " + command
 	return Entry{
-		Index: idx, Schedule: schedule, Command: command,
+		Index: idx, Type: inferType(command), Schedule: schedule, Command: command,
 		Comment: p.commentOf(e), Raw: p.lines[e.line],
 	}, nil
 }

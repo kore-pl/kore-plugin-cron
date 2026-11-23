@@ -24,9 +24,14 @@ const (
 type Store struct {
 	// writeMu 保证同一时刻只有一个读-改-写事务，避免并发请求互相覆盖。
 	writeMu sync.Mutex
+	// runMu 保证同一时刻只跑一次 cron.run：同一任务的并发执行不幂等，
+	// 重叠触发会制造脏数据（与 ADR-0019「同一任务不并发」同口径）。
+	runMu sync.Mutex
 	// backupDir 为空时按 KORE_CRON_BACKUP_DIR / <state>/cron-backup 解析。
 	backupDir string
 	fault     Fault
+	// logs 是日志读取依赖（可注入，供单元测试构造日志行而不碰真实文件）。
+	logs logDeps
 }
 
 // NewStore 构造管理器；备份目录在写入时按环境变量解析。

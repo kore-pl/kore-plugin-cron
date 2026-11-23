@@ -23,7 +23,12 @@ const (
 
 // readCrontab 执行 `crontab -l`。无 crontab 时命令以 exit 1 返回
 // "no crontab for <user>"，按空内容处理；其它失败统一映射为 ErrIO。
+//
+// KORE_CRON_FILE 非空时改为直接读该文件（隔离验证/测试专用，见 README）。
 func (s *Store) readCrontab(ctx context.Context) (string, error) {
+	if path := crontabFilePath(); path != "" {
+		return readCrontabFile(path)
+	}
 	cmd := exec.CommandContext(ctx, crontabBinary, "-l")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -71,7 +76,15 @@ func isPermissionError(output string) bool {
 
 // writeCrontab 以 `crontab -` 从 stdin 写入整份内容；系统 crontab 负责替换
 // 与落盘，插件不直接触碰 /var/spool/cron。
+//
+// KORE_CRON_FILE 非空时原子写该文件（同目录临时文件 + rename），供隔离验证。
 func (s *Store) writeCrontab(ctx context.Context, content string) error {
+	if path := crontabFilePath(); path != "" {
+		if err := ctx.Err(); err != nil {
+			return wrap(ErrTimeout, "写 crontab 文件超出时限: "+err.Error())
+		}
+		return writeCrontabFile(path, content)
+	}
 	cmd := exec.CommandContext(ctx, crontabBinary, "-")
 	cmd.Stdin = strings.NewReader(content)
 	var stderr bytes.Buffer

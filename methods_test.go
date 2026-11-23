@@ -1,0 +1,92 @@
+package main
+
+import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/pengtang1024/kore-plugin-cron/internal/croncore"
+	"github.com/pengtang1024/kore-plugin-cron/internal/cronfake"
+	"github.com/pengtang1024/kore/pkg/pluginapi"
+)
+
+// TestRunRejectsArbitraryCommand 是 cron.run 的安全边界回归：
+//   - 只给 command（没有 index/name）→ E_INVALID，绝不执行；
+//   - 同时给 index 与伪造 command → 只执行 crontab 里第 index 条的真实命令。
+func TestRunRejectsArbitraryCommand(t *testing.T) {
+	fake, err := cronfake.Install(t.TempDir())
+	if err != nil {
+		t.Fatalf("安装假 crontab 失败: %v", err)
+	}
+	fake.Use(t)
+	if err := fake.Seed("0 3 * * * echo hello\n"); err != nil {
+		t.Fatalf("预置 crontab 失败: %v", err)
+	}
+	store := croncore.NewStore()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	rejected := call(t, store, logger, "cron.run", `{"command":"touch /tmp/kore-cron-pwned"}`)
+	if rejected.Error == nil || rejected.Error.Code != pluginapi.E_INVALID {
+		t.Fatalf("任意命令必须被拒绝: %+v", rejected)
+	}
+	if strings.Contains(rejected.Error.Message, "touch") {
+		t.Fatalf("错误信息不应回显命令内容: %q", rejected.Error.Message)
+	}
+
+	result := mustOK(t, call(t, store, logger, "cron.run", `{"index":0,"command":"echo pwned"}`))
+	var run croncore.RunResult
+	if err := json.Unmarshal(result, &run); err != nil {
+		t.Fatalf("解析 run 结果失败: %v", err)
+	}
+	if strings.TrimSpace(run.Output) != "hello" || run.Command != "echo hello" {
+		t.Fatalf("执行目标必须是 crontab 里的命令，实际: %+v", run)
+	}
+}
+
+// TestRunRequiresLocator：空参数与未知 name 都返回明确错误，不执行任何东西。
+func TestRunRequiresLocator(t *testing.T) {
+	fake, err := cronfake.Install(t.TempDir())
+	if err != nil {
+		t.Fatalf("安装假 crontab 失败: %v", err)
+	}
+	fake.Use(t)
+	store := croncore.NewStore()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	response := call(t, store, logger, "cron.run", `{}`)
+	if response.Error == nil || response.Error.Code != pluginapi.E_INVALID {
+		t.Fatalf("空定位符应返回 E_INVALID: %+v", response)
+	}
+	response = call(t, store, logger, "cron.run", `{"name":"no-such"}`)
+	if response.Error == nil || response.Error.Code != pluginapi.E_NOTFOUND {
+		t.Fatalf("未知 name 应返回 E_NOTFOUND: %+v", response)
+	}
+}
+
+// TestLogsDispatchEncodesResult：logs 通过协议分发返回结构化结果（含 note）。
+func TestLogsDispatchEncodesResult(t *testing.T) {
+	dir := t.TempDir()
+	logPath := dir + "/syslog"
+	if err := os.WriteFile(logPath, []byte("Nov 23 10:17:01 host CRON[5]: (root) CMD (echo hi)\n"), 0o600); err != nil {
+		t.Fatalf("写日志失败: %v", err)
+	}
+	t.Setenv("KORE_CRON_DISABLE_JOURNAL", "1")
+	t.Setenv("KORE_CRON_LOG_FILE", logPath)
+	store := croncore.NewStore()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	result := mustOK(t, call(t, store, logger, "cron.logs", `{"limit":10}`))
+	var logs croncore.LogsResult
+	if err := json.Unmarshal(result, &logs); err != nil {
+		t.Fatalf("解析 logs 失败: %v", err)
+	}
+	if !logs.Available || logs.Count != 1 || logs.Entries[0].Command != "echo hi" {
+		t.Fatalf("logs 结果不符: %+v", logs)
+	}
+	if logs.Note == "" {
+		t.Fatal("logs 应带 note 说明完整输出需重定向")
+	}
+}

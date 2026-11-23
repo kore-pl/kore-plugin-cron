@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 (2026-11-23)
+
+- feat(cron): `cron.add` 支持任务类型——`shell`（缺省，原行为）/ `http`（url/method/headers/body 生成固定 argv 的 `curl -sS -m 30 -o /dev/null ...`，单引号转义、超时 30s）/ `plugin`（不落 crontab，只返回内核 scheduler 的任务描述 + `endpoint`，边界见 ADR-0019）。
+- feat(cron): `cron.logs` 读系统 cron 启动日志——`journalctl -u cron` → `KORE_CRON_LOG_FILE` → `/var/log/cron.log` → `/var/log/syslog`，解析 `{time,user,command,pid}`，最新在前、`limit` 默认 50/上限 200、`name` 过滤；无日志源时 `available=false` + 原因与补救说明（不把"读不到"伪装成"没执行"）。
+- feat(cron): `cron.run` 同步执行已注册任务——只接受 `index`/`name` 定位符、命令从 crontab 读取（拒绝任意命令）、`/bin/sh -c` 与系统 cron 一致、60s 超时按进程组杀、输出 64 KiB 上限、并发返回 `E_CONFLICT`。
+- feat(cron): `info.json` 增加方法级 `method_capabilities`（run/add/remove/replace=`system:admin`，list/logs=`system:read`），内核据此授权与审计。
+- feat(cron): `KORE_CRON_FILE` 文件后端（隔离验证用，原子写）与 `KORE_CRON_LOG_FILE` / `KORE_CRON_DISABLE_JOURNAL` 日志验证钩子。
+- test(cron): 任务类型命令生成/注入拒绝、日志解析（经典 syslog + journalctl ISO + 跨年）、run 只跑已注册任务/超时取消/并发拒绝、文件后端增删、四类故障下新方法返回与零副作用；端到端用例覆盖三种类型 + 日志 + 立即执行。
+- docs(cron): README 补齐任务类型、日志、立即执行、方法级能力与隔离验证口径。
+
 ## 0.2.1 (2026-11-23)
 
 - fix: 权限不足返回空列表 + warning，不再当服务故障

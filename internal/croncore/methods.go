@@ -27,19 +27,35 @@ func (s *Store) List(ctx context.Context) (*ListResult, error) {
 }
 
 // Add 校验入参后读现有 crontab、追加条目并整份写回；写前先备份。
+//
+// type=plugin 不走 crontab：只生成建议的内核 scheduler 任务描述
+// （ADR-0019 的边界：cron 插件管系统 crontab，plugin 任务归内核 scheduler）。
 func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
-	if err := s.preflight(ctx, true); err != nil {
+	typ := normalizeType(params.Type)
+	// plugin 类型不落 crontab，因此磁盘满不影响它（只受上下文与"进程被终止"类故障影响）。
+	if err := s.preflight(ctx, typ != TypePlugin); err != nil {
 		return nil, err
 	}
 	schedule, err := cleanSchedule(params.Schedule)
 	if err != nil {
 		return nil, err
 	}
-	command, err := cleanCommand(params.Command)
+	comment, err := cleanComment(params.Comment)
 	if err != nil {
 		return nil, err
 	}
-	comment, err := cleanComment(params.Comment)
+	if typ == TypePlugin {
+		suggestion, buildErr := buildPluginTask(params, schedule, comment)
+		if buildErr != nil {
+			return nil, buildErr
+		}
+		return &AddResult{
+			Type: TypePlugin, SchedulerTask: suggestion,
+			Note: "plugin 类型任务由内核 scheduler 执行（ADR-0019），cron 插件没有写入 crontab；请由前端 POST " +
+				schedulerTasksEndpoint + " 创建该任务。",
+		}, nil
+	}
+	spec, err := buildTask(params)
 	if err != nil {
 		return nil, err
 	}
@@ -51,16 +67,16 @@ func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
 		return nil, err
 	}
 	parsed := parseCrontab(content)
-	parsed.appendEntry(schedule, command, comment)
+	parsed.appendEntry(schedule, spec.command, comment)
 	backupPath, err := s.commit(ctx, content, joinLines(parsed.lines))
 	if err != nil {
 		return nil, err
 	}
 	entry := Entry{
-		Index: len(parsed.entries), Schedule: schedule, Command: command,
-		Comment: comment, Raw: schedule + " " + command,
+		Index: len(parsed.entries), Type: spec.typ, Schedule: schedule, Command: spec.command,
+		Comment: comment, Raw: schedule + " " + spec.command,
 	}
-	return &AddResult{Entry: entry, BackupPath: backupPath}, nil
+	return &AddResult{Type: spec.typ, Entry: &entry, BackupPath: backupPath}, nil
 }
 
 // Remove 删除第 index 条（0 起）及其紧邻注释；越界返回 ErrInvalidParam。

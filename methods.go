@@ -12,8 +12,27 @@ import (
 	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
-// requestTimeout 是单个请求的处理预算：用 context.WithTimeout，defer cancel 释放。
-const requestTimeout = 5 * time.Second
+// 请求处理预算：默认 5s；cron.run 同步执行任务需要 60s（再加 5s 余量），
+// cron.logs 可能触发 journalctl 调用，给 15s。全部用 context.WithTimeout，
+// defer cancel 释放——没有周期定时器（G-19）。
+const (
+	requestTimeout  = 5 * time.Second
+	runTimeout      = 60 * time.Second
+	runVerbTimeout  = runTimeout + 5*time.Second
+	logsVerbTimeout = 15 * time.Second
+)
+
+// verbTimeout 返回各动词的处理预算。
+func verbTimeout(verb string) time.Duration {
+	switch verb {
+	case "run":
+		return runVerbTimeout
+	case "logs":
+		return logsVerbTimeout
+	default:
+		return requestTimeout
+	}
+}
 
 // removeParams / replaceParams 用指针区分“缺省 index”和“显式 index=0”。
 type removeParams struct {
@@ -46,7 +65,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 		response.Error = methodError(pluginapi.E_NOTFOUND, "未知方法: "+request.Method)
 		return response, false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), verbTimeout(verb))
 	defer cancel()
 	if perr := handleCronVerb(ctx, verb, request.Params, store, response); perr != nil {
 		response.Error = perr
@@ -59,7 +78,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 func cronVerb(method, id string) (string, bool) {
 	verb := strings.TrimPrefix(method, id+".")
 	switch verb {
-	case "list", "add", "remove", "replace":
+	case "list", "add", "remove", "replace", "logs", "run":
 		return verb, true
 	default:
 		return "", false
@@ -109,6 +128,28 @@ func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, st
 		}
 		response.Result = encode(result)
 		return nil
+	case "logs":
+		p, perr := parseLogsParams(params)
+		if perr != nil {
+			return perr
+		}
+		result, err := store.Logs(ctx, p)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
+	case "run":
+		p, perr := parseRunParams(params)
+		if perr != nil {
+			return perr
+		}
+		result, err := store.Run(ctx, p)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
 	default:
 		return methodError(pluginapi.E_NOTFOUND, "未知方法: cron."+verb)
 	}
@@ -147,6 +188,30 @@ func parseReplaceParams(raw json.RawMessage) (croncore.ReplaceParams, *pluginapi
 	return croncore.ReplaceParams{Index: *p.Index, Schedule: p.Schedule, Command: p.Command}, nil
 }
 
+// parseLogsParams 解析 cron.logs 的 name / limit（都可选）。
+func parseLogsParams(raw json.RawMessage) (croncore.LogsParams, *pluginapi.Error) {
+	var p croncore.LogsParams
+	if perr := decodeObject(raw, &p); perr != nil {
+		return p, perr
+	}
+	return p, nil
+}
+
+// parseRunParams 解析 cron.run 的 index / name，并确保至少给了一个定位符。
+func parseRunParams(raw json.RawMessage) (croncore.RunParams, *pluginapi.Error) {
+	var p struct {
+		Index *int   `json:"index"`
+		Name  string `json:"name"`
+	}
+	if perr := decodeObject(raw, &p); perr != nil {
+		return croncore.RunParams{}, perr
+	}
+	if p.Index == nil && strings.TrimSpace(p.Name) == "" {
+		return croncore.RunParams{}, methodError(pluginapi.E_INVALID, "index 或 name 必填")
+	}
+	return croncore.RunParams{Index: p.Index, Name: p.Name}, nil
+}
+
 // decodeObject 确保 raw 是 JSON 对象并反序列化到 dst。
 func decodeObject(raw json.RawMessage, dst any) *pluginapi.Error {
 	if len(raw) != 0 && string(raw) != "null" {
@@ -167,6 +232,8 @@ func mapCoreError(err error) *pluginapi.Error {
 		return methodError(pluginapi.E_INVALID, err.Error())
 	case errors.Is(err, croncore.ErrNotFound):
 		return methodError(pluginapi.E_NOTFOUND, err.Error())
+	case errors.Is(err, croncore.ErrBusy):
+		return methodError(pluginapi.E_CONFLICT, err.Error())
 	case errors.Is(err, croncore.ErrTimeout), errors.Is(err, croncore.ErrInterrupted):
 		return methodError(pluginapi.E_UPSTREAM, err.Error())
 	default:

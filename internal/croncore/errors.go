@@ -8,10 +8,12 @@ var (
 	// ErrNoPermission 表示当前用户没有 crontab 权限（环境限制，不是服务端故障）。
 	ErrNoPermission = errors.New("cron: crontab permission denied")
 	ErrNotFound     = errors.New("cron: job not found")
-	ErrIO           = errors.New("cron: storage I/O error")
-	ErrResource     = errors.New("cron: resource limit exceeded")
-	ErrInterrupted  = errors.New("cron: interrupted")
-	ErrTimeout      = errors.New("cron: deadline exceeded")
+	// ErrBusy 表示已有任务正在手动执行（并发触发不幂等，拒绝而不是排队）。
+	ErrBusy        = errors.New("cron: job already running")
+	ErrIO          = errors.New("cron: storage I/O error")
+	ErrResource    = errors.New("cron: resource limit exceeded")
+	ErrInterrupted = errors.New("cron: interrupted")
+	ErrTimeout     = errors.New("cron: deadline exceeded")
 )
 
 // wrap 给底层错误加上下文，保留 errors.Is 可判定性。
