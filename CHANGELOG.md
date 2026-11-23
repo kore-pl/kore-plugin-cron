@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 (2026-11-23)
+
+- feat(cron): 新增 `cron.enable` / `cron.disable`——单条任务可停用/启用而不删除：停用把任务行改成 `#KORE-DISABLED# <原任务行>` 注释，上方注释与 schedule/command 原文完整保留，系统 cron 不再触发；启用去掉标记即逐字还原。
+- feat(cron): `cron.list` 每条 entry 新增 `enabled` 字段；停用条目仍占原 index（不重排），`raw` 返回去掉标记后的任务定义。
+- fix(cron): `cron.replace` 保留停用状态，不再隐含「替换即启用」。
+- feat(cron): 启停幂等——已是目标状态时返回 `changed:false` 且不写盘、不产生备份；真正变化时返回 `changed:true` + `backup_path`，沿用写前备份与失败回滚。
+- fix(cron): `cron.run` 拒绝执行停用任务（`E_CONFLICT`，提示先 `cron.enable`），停用不可被立即执行绕过。
+- feat(cron): `info.json` 为 `cron.enable` / `cron.disable` 声明 `system:admin` 方法级能力；版本 0.4.0。
+- test(cron): 覆盖启停往返、下标稳定、替换保留停用状态、注释伪造标记无效、畸形停用行按注释处理、停用前备份；故障注入覆盖磁盘满与写失败回滚、停用任务零执行；端到端覆盖 disable → list → run 拒绝 → enable。
+- docs(cron): README 补启停语义、`enabled` 字段与停用标记不可伪造的口径。
+
 ## 0.3.0 (2026-11-23)
 
 - feat(cron): `cron.add` 支持任务类型——`shell`（缺省，原行为）/ `http`（url/method/headers/body 生成固定 argv 的 `curl -sS -m 30 -o /dev/null ...`，单引号转义、超时 30s）/ `plugin`（不落 crontab，只返回内核 scheduler 的任务描述 + `endpoint`，边界见 ADR-0019）。

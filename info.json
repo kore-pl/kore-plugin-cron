@@ -1,7 +1,7 @@
 {
   "id": "cron",
   "name": "计划任务插件",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "protocol": "kore.plugin.v1",
   "lifecycle": "lazy",
   "depth_level": "production",
@@ -13,7 +13,9 @@
     "cron.add": "system:admin",
     "cron.remove": "system:admin",
     "cron.replace": "system:admin",
-    "cron.run": "system:admin"
+    "cron.run": "system:admin",
+    "cron.enable": "system:admin",
+    "cron.disable": "system:admin"
   },
   "triggers": ["schedule:daily@03:00"],
   "requires_kore": ">=0.1.0 <0.2.0",
@@ -21,5 +23,5 @@
   "depends_on": [],
   "conflicts": [],
   "scenario_tags": ["ops"],
-  "size_bytes": 1512236
+  "size_bytes": 1514479
 }

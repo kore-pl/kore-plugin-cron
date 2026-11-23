@@ -90,3 +90,49 @@ func TestLogsDispatchEncodesResult(t *testing.T) {
 		t.Fatal("logs 应带 note 说明完整输出需重定向")
 	}
 }
+
+// TestToggleDispatch：cron.enable / cron.disable 走协议分发，返回结构化结果，
+// 并验证停用后 cron.run 以 E_CONFLICT 拒绝（错误信息不回显任务内容）。
+func TestToggleDispatch(t *testing.T) {
+	fake, err := cronfake.Install(t.TempDir())
+	if err != nil {
+		t.Fatalf("安装假 crontab 失败: %v", err)
+	}
+	fake.Use(t)
+	if err := fake.Seed("# nightly\n0 3 * * * echo toggle-me\n"); err != nil {
+		t.Fatalf("预置 crontab 失败: %v", err)
+	}
+	store := croncore.NewStore()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var disabled croncore.ToggleResult
+	if err := json.Unmarshal(mustOK(t, call(t, store, logger, "cron.disable", `{"index":0}`)), &disabled); err != nil {
+		t.Fatalf("解析 disable 失败: %v", err)
+	}
+	if !disabled.Changed || disabled.Enabled || disabled.Entry.Enabled {
+		t.Fatalf("disable 结果不符: %+v", disabled)
+	}
+
+	rejected := call(t, store, logger, "cron.run", `{"index":0}`)
+	if rejected.Error == nil || rejected.Error.Code != pluginapi.E_CONFLICT {
+		t.Fatalf("停用任务 cron.run 应返回 E_CONFLICT: %+v", rejected)
+	}
+	if strings.Contains(rejected.Error.Message, "toggle-me") {
+		t.Fatalf("错误信息不应回显任务内容: %q", rejected.Error.Message)
+	}
+
+	var enabled croncore.ToggleResult
+	if err := json.Unmarshal(mustOK(t, call(t, store, logger, "cron.enable", `{"index":0}`)), &enabled); err != nil {
+		t.Fatalf("解析 enable 失败: %v", err)
+	}
+	if !enabled.Changed || !enabled.Enabled {
+		t.Fatalf("enable 结果不符: %+v", enabled)
+	}
+
+	if missing := call(t, store, logger, "cron.enable", `{}`); missing.Error == nil || missing.Error.Code != pluginapi.E_INVALID {
+		t.Fatalf("缺 index 应返回 E_INVALID: %+v", missing)
+	}
+	if outOfRange := call(t, store, logger, "cron.disable", `{"index":9}`); outOfRange.Error == nil || outOfRange.Error.Code != pluginapi.E_INVALID {
+		t.Fatalf("越界应返回 E_INVALID: %+v", outOfRange)
+	}
+}

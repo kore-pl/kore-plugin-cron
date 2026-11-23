@@ -78,7 +78,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 func cronVerb(method, id string) (string, bool) {
 	verb := strings.TrimPrefix(method, id+".")
 	switch verb {
-	case "list", "add", "remove", "replace", "logs", "run":
+	case "list", "add", "remove", "replace", "logs", "run", "enable", "disable":
 		return verb, true
 	default:
 		return "", false
@@ -107,7 +107,7 @@ func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, st
 		response.Result = encode(result)
 		return nil
 	case "remove":
-		index, perr := parseRemoveParams(params)
+		index, perr := parseIndexParams(params)
 		if perr != nil {
 			return perr
 		}
@@ -139,6 +139,17 @@ func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, st
 		}
 		response.Result = encode(result)
 		return nil
+	case "enable", "disable":
+		index, perr := parseIndexParams(params)
+		if perr != nil {
+			return perr
+		}
+		result, err := store.SetEnabled(ctx, index, verb == "enable")
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
 	case "run":
 		p, perr := parseRunParams(params)
 		if perr != nil {
@@ -164,8 +175,8 @@ func parseAddParams(raw json.RawMessage) (croncore.AddParams, *pluginapi.Error) 
 	return p, nil
 }
 
-// parseRemoveParams 解析 cron.remove 的必填 index。
-func parseRemoveParams(raw json.RawMessage) (int, *pluginapi.Error) {
+// parseIndexParams 解析 remove / enable / disable 共用的必填 index。
+func parseIndexParams(raw json.RawMessage) (int, *pluginapi.Error) {
 	var p removeParams
 	if perr := decodeObject(raw, &p); perr != nil {
 		return 0, perr
@@ -232,7 +243,7 @@ func mapCoreError(err error) *pluginapi.Error {
 		return methodError(pluginapi.E_INVALID, err.Error())
 	case errors.Is(err, croncore.ErrNotFound):
 		return methodError(pluginapi.E_NOTFOUND, err.Error())
-	case errors.Is(err, croncore.ErrBusy):
+	case errors.Is(err, croncore.ErrBusy), errors.Is(err, croncore.ErrDisabled):
 		return methodError(pluginapi.E_CONFLICT, err.Error())
 	case errors.Is(err, croncore.ErrTimeout), errors.Is(err, croncore.ErrInterrupted):
 		return methodError(pluginapi.E_UPSTREAM, err.Error())

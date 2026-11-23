@@ -14,7 +14,8 @@ const (
 )
 
 // Entry 是一条 crontab 任务。Index 为本次 list 结果中的 0 起下标，
-// Comment 是紧邻任务行上方的注释，Raw 是原始行文本。
+// Comment 是紧邻任务行上方的注释，Raw 是原始行文本（停用行返回去掉
+// "#KORE-DISABLED# " 标记后的定义），Enabled 表示该任务当前是否生效。
 //
 // Type 是按命令形态识别出的任务类型：生成命令带固定前缀时识别为 http，
 // 其余为 shell；识别是尽力而为（用户自己写的同形 curl 也会被识别为 http）。
@@ -25,6 +26,7 @@ type Entry struct {
 	Command  string `json:"command"`
 	Comment  string `json:"comment,omitempty"`
 	Raw      string `json:"raw"`
+	Enabled  bool   `json:"enabled"`
 }
 
 // ListResult 是 cron.list 的结构化结果；无 crontab 时 Entries 为空数组。
@@ -99,6 +101,17 @@ type ReplaceParams struct {
 type ReplaceResult struct {
 	Entry      Entry  `json:"entry"`
 	BackupPath string `json:"backup_path"`
+}
+
+// ToggleResult 是 cron.enable / cron.disable 的结构化结果。
+//
+// Changed=false 表示任务本来就处于目标状态：此时没有写盘、没有备份，
+// BackupPath 省略——幂等操作不应制造无意义的备份文件。
+type ToggleResult struct {
+	Entry      Entry  `json:"entry"`
+	Enabled    bool   `json:"enabled"`
+	Changed    bool   `json:"changed"`
+	BackupPath string `json:"backup_path,omitempty"`
 }
 
 // LogsParams 是 cron.logs 的入参：name 为可选过滤（匹配备注或命令），

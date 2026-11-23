@@ -2,6 +2,11 @@ package croncore
 
 import "strings"
 
+// DisabledPrefix 是停用任务的注释标记：系统 cron 把以 # 开头的行当注释，
+// 因此 "#KORE-DISABLED# " + 原始任务行既不会被系统执行，又完整保留定义。
+// 该标记必须紧贴行首（允许前导空白），避免和普通注释混淆。
+const DisabledPrefix = "#KORE-DISABLED# "
+
 // parsedCrontab 是 crontab 文本的按行解析结果：lines 保留每一行原文
 // （注释、空行、环境变量、无法识别的行都原样保留），entries 只记录可管理的
 // 5 段任务行及其行号与紧邻注释块，改动时不重排、不改写无关行。
@@ -11,12 +16,21 @@ type parsedCrontab struct {
 }
 
 // parsedEntry 是一条任务行：line 为下标，commentStart 为紧邻其上方连续
-// 注释块的起始下标（-1 表示无注释）。
+// 注释块的起始下标（-1 表示无注释）；disabled 表示该行带停用标记。
 type parsedEntry struct {
 	line         int
 	commentStart int
 	schedule     string
 	command      string
+	disabled     bool
+}
+
+// cutDisabledPrefix 剥掉行首停用标记；ok=false 表示不是停用行。
+func cutDisabledPrefix(line string) (string, bool) {
+	if !strings.HasPrefix(line, DisabledPrefix) {
+		return "", false
+	}
+	return line[len(DisabledPrefix):], true
 }
 
 // splitLines 去掉末尾换行后按行拆分；空文本返回 nil。
@@ -37,6 +51,8 @@ func joinLines(lines []string) string {
 }
 
 // parseCrontab 解析整份 crontab。无法识别的行不参与任务列表，但保留原文。
+// 带停用标记的行按"任务"解析并标记 disabled；标记后不是合法任务的定义按普通
+// 注释处理，绝不让它变成可执行任务。
 func parseCrontab(content string) parsedCrontab {
 	p := parsedCrontab{lines: splitLines(content)}
 	pending := -1
@@ -46,19 +62,24 @@ func parseCrontab(content string) parsedCrontab {
 			pending = -1
 			continue
 		}
-		if strings.HasPrefix(trimmed, "#") {
+		taskLine := trimmed
+		disabled := false
+		if rest, ok := cutDisabledPrefix(trimmed); ok {
+			disabled, taskLine = true, rest
+		}
+		if strings.HasPrefix(taskLine, "#") {
 			if pending < 0 {
 				pending = i
 			}
 			continue
 		}
-		schedule, command, ok := splitEntry(trimmed)
+		schedule, command, ok := splitEntry(taskLine)
 		if !ok || ValidateSchedule(schedule) != nil {
 			pending = -1
 			continue
 		}
 		p.entries = append(p.entries, parsedEntry{
-			line: i, commentStart: pending, schedule: schedule, command: command,
+			line: i, commentStart: pending, schedule: schedule, command: command, disabled: disabled,
 		})
 		pending = -1
 	}
@@ -100,12 +121,22 @@ func splitEntry(line string) (schedule, command string, ok bool) {
 func (p parsedCrontab) result() []Entry {
 	entries := make([]Entry, 0, len(p.entries))
 	for i, e := range p.entries {
-		entries = append(entries, Entry{
-			Index: i, Type: inferType(e.command), Schedule: e.schedule, Command: e.command,
-			Comment: p.commentOf(e), Raw: p.lines[e.line],
-		})
+		entries = append(entries, p.entryOf(i, e))
 	}
 	return entries
+}
+
+// entryOf 组装一条对外条目：停用行的 Raw 返回去掉标记后的定义，
+// 让界面展示的是"任务本身"，而 enabled=false 表明它当前不会被执行。
+func (p parsedCrontab) entryOf(index int, e parsedEntry) Entry {
+	raw := strings.TrimLeft(p.lines[e.line], " \t")
+	if e.disabled {
+		raw = strings.TrimPrefix(raw, DisabledPrefix)
+	}
+	return Entry{
+		Index: index, Type: inferType(e.command), Schedule: e.schedule, Command: e.command,
+		Comment: p.commentOf(e), Raw: raw, Enabled: !e.disabled,
+	}
 }
 
 // commentOf 返回紧邻任务行上方的注释文本（去掉 # 与前导空格）。
@@ -137,10 +168,7 @@ func (p *parsedCrontab) removeEntry(idx int) (Entry, error) {
 		return Entry{}, wrap(ErrInvalidParam, "index 越界: "+itoa(idx)+"，共 "+itoa(len(p.entries))+" 条")
 	}
 	e := p.entries[idx]
-	removed := Entry{
-		Index: idx, Type: inferType(e.command), Schedule: e.schedule, Command: e.command,
-		Comment: p.commentOf(e), Raw: p.lines[e.line],
-	}
+	removed := p.entryOf(idx, e)
 	start := e.line
 	if e.commentStart >= 0 {
 		start = e.commentStart
@@ -149,15 +177,44 @@ func (p *parsedCrontab) removeEntry(idx int) (Entry, error) {
 	return removed, nil
 }
 
-// replaceEntry 原地替换第 idx 条任务的 schedule 与 command，保留其注释。
+// replaceEntry 原地替换第 idx 条任务的 schedule 与 command，保留其注释；
+// 停用状态也必须保留——替换参数只改定义，不隐含"顺手启用"。
 func (p *parsedCrontab) replaceEntry(idx int, schedule, command string) (Entry, error) {
 	if idx < 0 || idx >= len(p.entries) {
 		return Entry{}, wrap(ErrInvalidParam, "index 越界: "+itoa(idx)+"，共 "+itoa(len(p.entries))+" 条")
 	}
 	e := p.entries[idx]
-	p.lines[e.line] = schedule + " " + command
-	return Entry{
-		Index: idx, Type: inferType(command), Schedule: schedule, Command: command,
-		Comment: p.commentOf(e), Raw: p.lines[e.line],
-	}, nil
+	line := schedule + " " + command
+	if e.disabled {
+		line = DisabledPrefix + line
+	}
+	p.lines[e.line] = line
+	return p.entryOf(idx, parsedEntry{
+		line: e.line, commentStart: e.commentStart,
+		schedule: schedule, command: command, disabled: e.disabled,
+	}), nil
+}
+
+// setEnabled 停用/启用第 idx 条任务，返回改后的条目与是否真的发生了变化。
+//
+// 停用只加注释标记、启用只去标记：任务行原文（schedule + command）与上方注释
+// 都原样留在 crontab 里，因此 enable 能完整还原，不存在"停用即丢失定义"。
+// 目标状态与当前一致时 changed=false，调用方不应写盘（避免无意义的备份）。
+func (p *parsedCrontab) setEnabled(idx int, enabled bool) (Entry, bool, error) {
+	if idx < 0 || idx >= len(p.entries) {
+		return Entry{}, false, wrap(ErrInvalidParam, "index 越界: "+itoa(idx)+"，共 "+itoa(len(p.entries))+" 条")
+	}
+	e := p.entries[idx]
+	if e.disabled == !enabled {
+		return p.entryOf(idx, e), false, nil
+	}
+	line := strings.TrimLeft(p.lines[e.line], " \t")
+	if enabled {
+		line = strings.TrimPrefix(line, DisabledPrefix)
+	} else {
+		line = DisabledPrefix + line
+	}
+	p.lines[e.line] = line
+	e.disabled = !enabled
+	return p.entryOf(idx, e), true, nil
 }

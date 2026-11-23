@@ -35,6 +35,11 @@ func (s *Store) Run(ctx context.Context, params RunParams) (*RunResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 停用任务的定义还在 crontab 里，但它是注释行——系统不会执行它，
+	// 立即执行也不许绕过启停开关（否则"停用"形同虚设）。
+	if !target.Enabled {
+		return nil, wrap(ErrDisabled, "任务 index "+itoa(target.Index)+" 已停用，请先调用 cron.enable 恢复后再执行")
+	}
 	if !s.runMu.TryLock() {
 		return nil, wrap(ErrBusy, "已有任务正在手动执行，请等它结束再试")
 	}

@@ -74,7 +74,7 @@ func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
 	}
 	entry := Entry{
 		Index: len(parsed.entries), Type: spec.typ, Schedule: schedule, Command: spec.command,
-		Comment: comment, Raw: schedule + " " + spec.command,
+		Comment: comment, Raw: schedule + " " + spec.command, Enabled: true,
 	}
 	return &AddResult{Type: spec.typ, Entry: &entry, BackupPath: backupPath}, nil
 }
@@ -133,4 +133,35 @@ func (s *Store) Replace(ctx context.Context, params ReplaceParams) (*ReplaceResu
 		return nil, err
 	}
 	return &ReplaceResult{Entry: entry, BackupPath: backupPath}, nil
+}
+
+// SetEnabled 停用/启用第 index 条任务（cron.disable / cron.enable 的共同实现）。
+//
+// 不删除任务：停用只在任务行前加 "#KORE-DISABLED# " 注释标记，关闭系统 cron
+// 的执行路径；启用去掉标记即完整还原。状态本来就一致时 changed=false 且不写盘。
+// 需要写盘时走与 add/remove/replace 相同的"先备份、失败回滚"路径。
+func (s *Store) SetEnabled(ctx context.Context, index int, enabled bool) (*ToggleResult, error) {
+	if err := s.preflight(ctx, true); err != nil {
+		return nil, err
+	}
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	content, err := s.readCrontab(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parsed := parseCrontab(content)
+	entry, changed, err := parsed.setEnabled(index, enabled)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		return &ToggleResult{Entry: entry, Enabled: enabled, Changed: false}, nil
+	}
+	backupPath, err := s.commit(ctx, content, joinLines(parsed.lines))
+	if err != nil {
+		return nil, err
+	}
+	return &ToggleResult{Entry: entry, Enabled: enabled, Changed: true, BackupPath: backupPath}, nil
 }

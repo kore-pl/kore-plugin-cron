@@ -18,7 +18,9 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 | `cron.list` | 执行 `crontab -l`，返回条目数组与总数；权限不足返回 `entries: []` + `warning`（环境限制，非故障） |
 | `cron.add` | 校验后追加条目，写前备份，整份写回 |
 | `cron.remove` | 按 0 起下标删除条目及其紧邻注释 |
-| `cron.replace` | 按 0 起下标替换 schedule / command，保留注释 |
+| `cron.replace` | 按 0 起下标替换 schedule / command，保留注释与启停状态 |
+| `cron.disable` | 按 0 起下标停用任务：保留原定义，只加注释标记，系统不再执行 |
+| `cron.enable` | 按 0 起下标重新启用：去掉注释标记，逐字还原原任务 |
 | `cron.logs` | 读系统 cron 启动日志（journalctl / cron.log / syslog），返回 `{available, source, entries[], note}` |
 | `cron.run` | 同步执行**已注册任务**的命令，返回 `{started, output, exit_code, duration_ms}` |
 
@@ -27,12 +29,14 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 `cron.list` 返回：
 
 ```json
-{"entries":[{"index":0,"schedule":"0 3 * * *","command":"/usr/bin/backup","comment":"nightly backup","raw":"0 3 * * * /usr/bin/backup"}],"count":1}
+{"entries":[{"index":0,"type":"shell","schedule":"0 3 * * *","command":"/usr/bin/backup","comment":"nightly backup","raw":"0 3 * * * /usr/bin/backup","enabled":true}],"count":1}
 ```
 
 - `index`：本次列表中的 **0 起下标**，`remove` / `replace` 直接使用。
 - `comment`：紧邻任务行上方的连续注释块（去掉 `#` 前缀），无注释时省略。
-- `raw`：原始行文本，便于核对。
+- `raw`：原始行文本，便于核对；停用行返回**去掉标记后**的任务定义。
+- `enabled`：任务当前是否生效。`false` 表示该任务已被 `cron.disable` 停用
+  （crontab 里是 `#KORE-DISABLED# ` 注释行），定义仍在、可随时 `cron.enable` 还原。
 - 无 crontab（`crontab -l` 返回 `no crontab for <user>`）时 `entries` 为 `[]`，不是错误。
 - **权限不足**（`crontab -l` 报 `permission denied` / `权限不够`）时同样返回成功：`entries` 为 `[]`、`count` 为 0，并附 `warning`（如「当前用户无 crontab 权限」）——这是环境限制，不映射成服务端故障；真正的 I/O 失败仍返回错误。
 
@@ -72,18 +76,46 @@ curl 也会被识别为 http。`cron.replace` 仍只接收 schedule + command（
 - **没有日志源时诚实返回** `available=false` + `source:"none"` + `note`（说明原因与
   "把命令重定向到日志文件"的补救方式），不把"读不到日志"伪装成"没有执行"。
 
+### 启停（cron.enable / cron.disable）
+
+入参都是 `{"index":0}`（与 `cron.remove` / `cron.replace` 同一套 0 起下标）。
+
+- **不删除、不丢定义**：停用只把任务行改成 `#KORE-DISABLED# <原任务行>`，上方注释与
+  `schedule + command` 原文完整保留；启用只去掉该前缀，逐字还原。系统 cron 把 `#` 开头的
+  行当注释，因此停用任务不会被触发。
+- **幂等**：任务已是目标状态时返回 `changed:false`，**不写盘、不产生备份**；真正变化时
+  返回 `changed:true` + `backup_path`（与 add/remove/replace 相同的写前备份、失败回滚）。
+- **下标稳定**：停用不改变条目顺序或 `index`，停用后仍可按同一下标 `remove` / `replace` /
+  `enable`。`replace` 会保留停用状态，不会"顺手启用"。
+- **不可立即执行**：`cron.run` 命中停用任务返回 `E_CONFLICT`（错误信息提示先 enable），
+  命令不会被执行——否则"停用"可被 run 绕过。
+- **标记不可伪造**：普通 `comment` 落盘时总会带 `# ` 前缀，写成
+  `# #KORE-DISABLED# ...`，不会被解析成停用任务；`#KORE-DISABLED#` 后不是合法 5 段
+  任务的定义按普通注释处理，不出现在 `cron.list`、也不可被 `cron.run` 定位。
+
+```json
+{"index":0}
+```
+
+返回：
+
+```json
+{"entry":{"index":0,"type":"shell","schedule":"0 3 * * *","command":"/usr/bin/backup","raw":"0 3 * * * /usr/bin/backup","enabled":false},"enabled":false,"changed":true,"backup_path":"<state>/cron-backup/crontab-...txt"}
+```
+
 ### 立即执行（cron.run）
 
 `{"index":0}` 或 `{"name":"nightly backup"}`（备注或命令唯一匹配）；**不接受 command 字段**——
 执行目标永远从 crontab 解析结果里取，找不到 / 匹配多条都返回错误，绝不猜一个执行。
 执行方式与系统 cron 一致：`/bin/sh -c "<该条命令>"`，超时 60s（进程组一起杀），
 同步返回 `{started, output, exit_code, duration_ms, timed_out?}`，输出最多保留 64 KiB。
-同一时刻只允许一次手动执行（并发触发返回 `E_CONFLICT`）。
+同一时刻只允许一次手动执行（并发触发返回 `E_CONFLICT`）。**停用任务不可执行**：
+`cron.run` 返回 `E_CONFLICT`，必须先 `cron.enable`。
 
 ### 方法级能力（info.json）
 
-`cron.run` / `cron.add` / `cron.remove` / `cron.replace` 声明为 `system:admin`，
-`cron.list` / `cron.logs` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
+`cron.run` / `cron.add` / `cron.remove` / `cron.replace` / `cron.enable` /
+`cron.disable` 声明为 `system:admin`，`cron.list` / `cron.logs` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
 `method_capabilities` 校验并决定是否落审计（只读方法不落 `invoke.*` 审计）。
 
 ## 安全与一致性

@@ -8,6 +8,9 @@ var (
 	// ErrNoPermission 表示当前用户没有 crontab 权限（环境限制，不是服务端故障）。
 	ErrNoPermission = errors.New("cron: crontab permission denied")
 	ErrNotFound     = errors.New("cron: job not found")
+	// ErrDisabled 表示任务已停用：定义仍在 crontab 里（注释行），但不会被
+	// 系统执行、也不允许 cron.run 立即执行——要跑先 enable。
+	ErrDisabled = errors.New("cron: job disabled")
 	// ErrBusy 表示已有任务正在手动执行（并发触发不幂等，拒绝而不是排队）。
 	ErrBusy        = errors.New("cron: job already running")
 	ErrIO          = errors.New("cron: storage I/O error")
