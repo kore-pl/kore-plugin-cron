@@ -29,6 +29,8 @@ func verbTimeout(verb string) time.Duration {
 		return runVerbTimeout
 	case "logs":
 		return logsVerbTimeout
+	case "batch":
+		return 120 * time.Second
 	default:
 		return requestTimeout
 	}
@@ -78,7 +80,7 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 func cronVerb(method, id string) (string, bool) {
 	verb := strings.TrimPrefix(method, id+".")
 	switch verb {
-	case "list", "add", "remove", "replace", "logs", "run", "enable", "disable":
+	case "list", "add", "remove", "replace", "logs", "run", "enable", "disable", "templates", "batch":
 		return verb, true
 	default:
 		return "", false
@@ -134,6 +136,24 @@ func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, st
 			return perr
 		}
 		result, err := store.Logs(ctx, p)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
+	case "templates":
+		result, err := store.Templates(ctx)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
+	case "batch":
+		var p croncore.BatchParams
+		if perr := decodeObject(params, &p); perr != nil {
+			return perr
+		}
+		result, err := store.Batch(ctx, p)
 		if err != nil {
 			return mapCoreError(err)
 		}

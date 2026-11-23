@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 (2026-11-23)
+
+- feat(cron): 新增只读 `cron.templates`：4 个常用模板（每日备份站点 / 每小时健康检查 / 每周清理日志 / 每月证书检查），返回 `{id,name,description,schedule,type,command?,url?,comment?}`，不写 crontab、不执行任何动作。
+- feat(cron): 新增 `cron.batch`：`{action: enable|disable|remove|run, ids:[0起下标]}`（去重、最多 50 条），逐条执行并把结果分成 `succeeded` / `failed` 两组；部分失败不回滚已成功条目；remove 从大到小执行避免下标漂移。
+- feat(cron): `info.json` 声明 `methods` 清单与 `cron.templates=system:read` / `cron.batch=system:admin`；版本 0.5.0。
+- test(cron): 批量部分失败/幂等启用/批量删除下标漂移/非法动作、模板只读与返回值防篡改。
+- docs(cron): 前端启停与立即执行接线在主壳 `kore/web/tasks.js`（乐观更新 + 失败回滚、停用行置灰、停用任务点执行给「先启用」提示）；**通知不做**——失败通知属主壳告警中心（跨插件边界，cron 不内建第二套通知通道），不在本插件实现。
+
 ## 0.4.1 (2026-11-23)
 
 - feat(cron): `cron.add` 为 shell / http 任务生成固定包装命令（插件自身二进制 `__task-run`），定时执行结束时把 `{task_name, started_at, duration_ms, exit_code, output_head, output_bytes, truncated}` 追加到 `<state>/runlog/runlog.jsonl`（目录 0700、文件 0600）；`cron.run` 的立即执行同样记录，执行结果新增 `task_name` / `output_bytes` / `log_error`。
