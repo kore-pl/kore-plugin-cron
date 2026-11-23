@@ -68,7 +68,8 @@ func TestCrontabLifecycleE2E(t *testing.T) {
 	if strings.Contains(content, "echo injected") {
 		t.Fatalf("被拒命令仍写入 crontab: %q", content)
 	}
-	if count := strings.Count(content, "\n"); count != 1 {
+	// 包装任务每条占两行（元数据注释 + 任务行），拒绝后仍只保留 1 条任务。
+	if count := strings.Count(content, "__task-run"); count != 1 {
 		t.Fatalf("拒绝后 crontab 应只保留 1 条任务: %q", content)
 	}
 }

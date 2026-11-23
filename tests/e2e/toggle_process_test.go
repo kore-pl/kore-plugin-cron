@@ -99,8 +99,11 @@ func TestToggleProcessE2E(t *testing.T) {
 		t.Fatalf("读临时 crontab 失败: %v", readErr)
 	}
 	content := string(data)
-	if !strings.Contains(content, "# nightly toggle\n0 3 * * * echo toggle-me\n") {
-		t.Fatalf("enable 后应逐字还原: %q", content)
+	if !strings.Contains(content, "# nightly toggle\n# kore-cron:") ||
+		!strings.Contains(content, "0 3 * * * ") ||
+		!strings.Contains(content, "'echo toggle-me'") ||
+		strings.Contains(content, croncore.DisabledPrefix) {
+		t.Fatalf("enable 后应逐字还原包装任务: %q", content)
 	}
 
 	shutdown := request(t, conn, "t6", "kore.shutdown", `{}`)

@@ -36,16 +36,18 @@ func TestDisableEnableRoundTrip(t *testing.T) {
 	if disabled.BackupPath == "" {
 		t.Fatal("disable 写盘必须返回 backup_path")
 	}
-	if disabled.Entry.Raw != "0 3 * * * /usr/bin/backup --full" {
-		t.Fatalf("停用条目的 raw 应是去标记后的定义: %q", disabled.Entry.Raw)
+	if !strings.Contains(disabled.Entry.Raw, "__task-run") ||
+		!strings.Contains(disabled.Entry.Raw, "/usr/bin/backup --full") {
+		t.Fatalf("停用条目的 raw 应是去标记后的包装命令行: %q", disabled.Entry.Raw)
 	}
 	if disabled.Entry.Comment != "nightly backup" {
 		t.Fatalf("停用不得丢注释: %q", disabled.Entry.Comment)
 	}
 	content, _ := fake.Content()
-	want := "# nightly backup\n" + DisabledPrefix + "0 3 * * * /usr/bin/backup --full\n"
-	if content != want {
-		t.Fatalf("停用后的 crontab 不符:\n got %q\nwant %q", content, want)
+	if !strings.Contains(content, "# nightly backup\n# kore-cron:") ||
+		!strings.Contains(content, DisabledPrefix+"0 3 * * * ") ||
+		!strings.Contains(content, "'/usr/bin/backup --full'") {
+		t.Fatalf("停用后的 crontab 不符（标记应加在包装命令行上）: %q", content)
 	}
 
 	listed, err := store.List(ctx)

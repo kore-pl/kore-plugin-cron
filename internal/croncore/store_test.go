@@ -21,6 +21,7 @@ func newTestStore(t *testing.T) (*Store, *cronfake.State) {
 		t.Fatalf("安装假 crontab 失败: %v", err)
 	}
 	fake.Use(t)
+	t.Setenv("KORE_STATE_DIR", t.TempDir())
 	return NewStore(), fake
 }
 
@@ -61,8 +62,10 @@ func TestAddListWithComment(t *testing.T) {
 		t.Fatalf("备份文件不存在: %v", err)
 	}
 	content, _ := fake.Content()
-	if !strings.Contains(content, "# nightly backup\n0 3 * * * /usr/bin/backup\n") {
-		t.Fatalf("写回内容不符: %q", content)
+	if !strings.Contains(content, "# nightly backup\n# kore-cron:") ||
+		!strings.Contains(content, " __task-run ") ||
+		!strings.Contains(content, "'/usr/bin/backup'") {
+		t.Fatalf("写回内容不符（应有注释+元数据+包装命令）: %q", content)
 	}
 	result, err := store.List(ctx)
 	if err != nil {

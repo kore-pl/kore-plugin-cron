@@ -44,7 +44,24 @@ func (s *Store) Run(ctx context.Context, params RunParams) (*RunResult, error) {
 		return nil, wrap(ErrBusy, "已有任务正在手动执行，请等它结束再试")
 	}
 	defer s.runMu.Unlock()
-	return executeEntry(ctx, target)
+	started := time.Now()
+	result, err := executeEntry(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	result.TaskName = target.TaskName
+	head := truncateRunes(result.Output, outputHeadBytes)
+	record := RunlogEntry{
+		TaskName: target.TaskName, StartedAt: started.UTC().Format(time.RFC3339),
+		DurationMS: result.DurationMS, ExitCode: result.ExitCode,
+		OutputHead: head, OutputBytes: result.OutputBytes,
+		Truncated: result.OutputBytes > int64(len(head)),
+		Mode:      "manual", TimedOut: result.TimedOut,
+	}
+	if logErr := appendRunLog(runlogFilePath(), record); logErr != nil {
+		result.LogError = logErr.Error()
+	}
+	return result, nil
 }
 
 // resolveRunTarget 按 index 优先、name 次之定位任务；name 匹配备注或命令。
@@ -106,7 +123,7 @@ func executeEntry(ctx context.Context, entry Entry) (*RunResult, error) {
 	result := &RunResult{
 		Index: entry.Index, Schedule: entry.Schedule, Command: entry.Command,
 		Started: true, Output: buffer.String(), ExitCode: 0,
-		DurationMS: duration.Milliseconds(),
+		DurationMS: duration.Milliseconds(), OutputBytes: buffer.total,
 	}
 	if err == nil {
 		return result, nil
@@ -132,10 +149,13 @@ func executeEntry(ctx context.Context, entry Entry) (*RunResult, error) {
 type limitedBuffer struct {
 	buffer bytes.Buffer
 	limit  int
+	// total 是实际输出总字节数（含被丢弃部分），runlog 的 output_bytes 用它。
+	total int64
 }
 
 // Write 实现 io.Writer；超限部分静默丢弃（保留前 limit 字节）。
 func (b *limitedBuffer) Write(data []byte) (int, error) {
+	b.total += int64(len(data))
 	remaining := b.limit - b.buffer.Len()
 	if remaining > 0 {
 		if len(data) > remaining {

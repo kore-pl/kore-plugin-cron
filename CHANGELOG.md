@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 (2026-11-23)
+
+- feat(cron): `cron.add` 为 shell / http 任务生成固定包装命令（插件自身二进制 `__task-run`），定时执行结束时把 `{task_name, started_at, duration_ms, exit_code, output_head, output_bytes, truncated}` 追加到 `<state>/runlog/runlog.jsonl`（目录 0700、文件 0600）；`cron.run` 的立即执行同样记录，执行结果新增 `task_name` / `output_bytes` / `log_error`。
+- feat(cron): wrapper 路径来自 `os.Executable()`、日志路径来自状态目录，用户无法指定；用户命令作为单个 argv 传入并由 `/bin/sh -c` 执行，`cron.list` 仍返回逻辑命令（元数据注释保存在任务行上方）。
+- test(cron): wrapper 引号/注入结构、超长退化、runlog 追加/过滤/limit、`__task-run` 真实二进制退出码与 0600 权限端到端。
+- 注：`cron.runlog` 查询方法与 `backup` 类型裁决留到下一轮。
+
 ## 0.4.0 (2026-11-23)
 
 - feat(cron): 新增 `cron.enable` / `cron.disable`——单条任务可停用/启用而不删除：停用把任务行改成 `#KORE-DISABLED# <原任务行>` 注释，上方注释与 schedule/command 原文完整保留，系统 cron 不再触发；启用去掉标记即逐字还原。

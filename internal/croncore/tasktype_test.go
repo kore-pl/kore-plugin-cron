@@ -36,8 +36,10 @@ func TestAddShellDefaultType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读 crontab 文件失败: %v", err)
 	}
-	if string(content) != "# nightly\n0 3 * * * echo hello\n" {
-		t.Fatalf("crontab 内容不符: %q", content)
+	if !strings.Contains(string(content), "# nightly\n# kore-cron:") ||
+		!strings.Contains(string(content), " __task-run ") ||
+		!strings.Contains(string(content), "'echo hello'") {
+		t.Fatalf("crontab 内容不符（应有注释+元数据+包装命令）: %q", content)
 	}
 }
 
@@ -65,8 +67,8 @@ func TestAddHTTPGeneratesFixedArgv(t *testing.T) {
 		t.Fatalf("类型应为 http: %+v", result.Entry)
 	}
 	content, _ := os.ReadFile(path)
-	if len(strings.Split(strings.TrimSpace(string(content)), "\n")) != 2 {
-		t.Fatalf("http 任务应只写一行命令 + 一行注释: %q", content)
+	if len(strings.Split(strings.TrimSpace(string(content)), "\n")) != 3 {
+		t.Fatalf("http 任务应写 注释+元数据+任务 三行: %q", content)
 	}
 }
 
@@ -101,7 +103,7 @@ func TestAddHTTPQuotesShellMetacharacters(t *testing.T) {
 		t.Fatalf("单引号未转义: %q", result.Entry.Command)
 	}
 	content, _ := os.ReadFile(path)
-	if len(strings.Split(strings.TrimSpace(string(content)), "\n")) != 1 {
+	if len(strings.Split(strings.TrimSpace(string(content)), "\n")) != 2 {
 		t.Fatalf("命令被拆成多行（注入成功）: %q", content)
 	}
 }

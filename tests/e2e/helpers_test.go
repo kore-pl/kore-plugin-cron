@@ -35,6 +35,7 @@ func startPlugin(t *testing.T, binary, dir, socket string, fake *cronfake.State)
 		"KORE_PLUGIN_ID=cron",
 		"KORE_PLUGIN_TOKEN=e2e",
 		"KORE_CRON_BACKUP_DIR="+filepath.Join(dir, "backup"),
+		"KORE_STATE_DIR="+dir,
 		"PATH="+fake.Dir+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 	process.Stdout = io.Discard

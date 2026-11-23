@@ -59,6 +59,14 @@ func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 包装命令让系统 cron 的每次执行都写 runlog；路径来自插件自身与状态目录，
+	// 用户无法控制。命令过长等情况下退化为原始命令（仍可执行，但无逐任务日志）。
+	taskLine, metaLine, taskName, wrapped := buildWrappedTask(schedule, spec, comment)
+	note := ""
+	if !wrapped {
+		taskLine = spec.command
+		note = "任务已写入 crontab，但当前未启用逐任务执行日志（命令过长或取不到插件自身路径）；cron.run 的立即执行仍会记录"
+	}
 
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -67,16 +75,20 @@ func (s *Store) Add(ctx context.Context, params AddParams) (*AddResult, error) {
 		return nil, err
 	}
 	parsed := parseCrontab(content)
-	parsed.appendEntry(schedule, spec.command, comment)
+	parsed.appendEntry(schedule, taskLine, comment, metaLine)
 	backupPath, err := s.commit(ctx, content, joinLines(parsed.lines))
 	if err != nil {
 		return nil, err
 	}
 	entry := Entry{
 		Index: len(parsed.entries), Type: spec.typ, Schedule: schedule, Command: spec.command,
-		Comment: comment, Raw: schedule + " " + spec.command, Enabled: true,
+		Comment: comment, Raw: schedule + " " + taskLine, Enabled: true,
+		TaskName: taskName, Wrapped: wrapped,
 	}
-	return &AddResult{Type: spec.typ, Entry: &entry, BackupPath: backupPath}, nil
+	return &AddResult{
+		Type: spec.typ, Entry: &entry, BackupPath: backupPath,
+		ScheduledLog: wrapped, Note: note,
+	}, nil
 }
 
 // Remove 删除第 index 条（0 起）及其紧邻注释；越界返回 ErrInvalidParam。

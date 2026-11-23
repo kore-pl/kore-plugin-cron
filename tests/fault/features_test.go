@@ -67,6 +67,10 @@ func TestFaultHTTPAddDiskFull(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("准备数据失败: %v", err)
 	}
+	before, readErr := fakeCrontab.Content()
+	if readErr != nil {
+		t.Fatalf("读假 crontab 失败: %v", readErr)
+	}
 	store.InjectFault(croncore.FaultDiskFull)
 	_, err := store.Add(context.Background(), croncore.AddParams{
 		Type: croncore.TypeHTTP, Schedule: "0 4 * * *", URL: "https://example.com/",
@@ -78,8 +82,8 @@ func TestFaultHTTPAddDiskFull(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("读假 crontab 失败: %v", readErr)
 	}
-	if content != "0 3 * * * /bin/true\n" {
-		t.Fatalf("失败写入不得污染 crontab: %q", content)
+	if content != before {
+		t.Fatalf("失败写入不得污染 crontab: before=%q after=%q", before, content)
 	}
 }
 

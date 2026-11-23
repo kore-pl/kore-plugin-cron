@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pengtang1024/kore-plugin-cron/internal/croncore"
@@ -98,7 +99,9 @@ func TestFaultDisabledMarkerIsComment(t *testing.T) {
 		t.Fatalf("disable 失败: %v", err)
 	}
 	content, _ := fakeCrontab.Content()
-	if content != "# nightly\n"+croncore.DisabledPrefix+"0 3 * * * /bin/true\n" {
+	if !strings.Contains(content, "# nightly\n# kore-cron:") ||
+		!strings.Contains(content, croncore.DisabledPrefix+"0 3 * * * ") ||
+		!strings.Contains(content, "'/bin/true'") {
 		t.Fatalf("停用行必须是带标记的注释行: %q", content)
 	}
 	store.InjectFault(croncore.FaultDiskFull)

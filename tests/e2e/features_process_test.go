@@ -98,11 +98,14 @@ func TestTaskTypesLogsRunE2E(t *testing.T) {
 		t.Fatalf("读临时 crontab 失败: %v", readErr)
 	}
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
-	if len(lines) != 3 { // 1 行注释 + 2 行任务
+	if len(lines) != 5 { // 注释 + 元数据 + 任务，第二条只有元数据 + 任务
 		t.Fatalf("crontab 行数不符（plugin 类型不应写入）: %q", content)
 	}
-	if !strings.Contains(lines[2], "curl -sS -m 30 -o /dev/null -X POST") {
-		t.Fatalf("http 任务未生成固定 argv curl: %q", lines[2])
+	if !strings.Contains(string(content), "curl -sS -m 30 -o /dev/null -X POST") {
+		t.Fatalf("http 任务未生成固定 argv curl: %q", content)
+	}
+	if strings.Count(string(content), "__task-run") != 2 {
+		t.Fatalf("两条任务都应套包装命令: %q", content)
 	}
 
 	var list croncore.ListResult

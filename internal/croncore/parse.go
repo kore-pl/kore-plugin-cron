@@ -1,6 +1,9 @@
 package croncore
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
 
 // DisabledPrefix 是停用任务的注释标记：系统 cron 把以 # 开头的行当注释，
 // 因此 "#KORE-DISABLED# " + 原始任务行既不会被系统执行，又完整保留定义。
@@ -23,6 +26,10 @@ type parsedEntry struct {
 	schedule     string
 	command      string
 	disabled     bool
+	// meta 是 wrapper 任务的逻辑定义；nil 表示普通（未包装）任务。
+	meta *taskMeta
+	// metaLine 是元数据注释所在行（-1 表示无）。
+	metaLine int
 }
 
 // cutDisabledPrefix 剥掉行首停用标记；ok=false 表示不是停用行。
@@ -78,12 +85,29 @@ func parseCrontab(content string) parsedCrontab {
 			pending = -1
 			continue
 		}
-		p.entries = append(p.entries, parsedEntry{
-			line: i, commentStart: pending, schedule: schedule, command: command, disabled: disabled,
-		})
+		entry := parsedEntry{
+			line: i, commentStart: pending, schedule: schedule, command: command,
+			disabled: disabled, metaLine: -1,
+		}
+		if pending >= 0 {
+			if meta, metaLine, ok := findTaskMeta(p.lines, pending, i); ok {
+				entry.meta, entry.metaLine = meta, metaLine
+			}
+		}
+		p.entries = append(p.entries, entry)
 		pending = -1
 	}
 	return p
+}
+
+// findTaskMeta 在紧邻任务行的注释块中查找元数据行；最后一条生效。
+func findTaskMeta(lines []string, start, end int) (*taskMeta, int, bool) {
+	for i := end - 1; i >= start; i-- {
+		if meta, ok := parseTaskMeta(lines[i]); ok {
+			return &meta, i, true
+		}
+	}
+	return nil, -1, false
 }
 
 // splitEntry 把一行拆成 5 段 schedule 与剩余 command。环境变量、@ 宏、
@@ -133,9 +157,18 @@ func (p parsedCrontab) entryOf(index int, e parsedEntry) Entry {
 	if e.disabled {
 		raw = strings.TrimPrefix(raw, DisabledPrefix)
 	}
+	command, typ, taskName, wrapped := e.command, inferType(e.command), "", false
+	if e.meta != nil {
+		command, typ, taskName, wrapped = e.meta.Command, e.meta.Type, e.meta.Name, true
+	}
+	comment := p.commentOf(e)
+	if taskName == "" {
+		taskName = deriveTaskName(comment, command)
+	}
 	return Entry{
-		Index: index, Type: inferType(e.command), Schedule: e.schedule, Command: e.command,
-		Comment: p.commentOf(e), Raw: raw, Enabled: !e.disabled,
+		Index: index, Type: typ, Schedule: e.schedule, Command: command,
+		Comment: comment, Raw: raw, Enabled: !e.disabled,
+		TaskName: taskName, Wrapped: wrapped,
 	}
 }
 
@@ -146,18 +179,24 @@ func (p parsedCrontab) commentOf(e parsedEntry) string {
 	}
 	parts := make([]string, 0, e.line-e.commentStart)
 	for i := e.commentStart; i < e.line; i++ {
+		if i == e.metaLine {
+			continue // 元数据是内部结构，不属于用户备注
+		}
 		text := strings.TrimPrefix(strings.TrimLeft(p.lines[i], " \t"), "#")
 		parts = append(parts, strings.TrimPrefix(text, " "))
 	}
 	return strings.Join(parts, "\n")
 }
 
-// appendEntry 在末尾追加可选注释行与任务行。
-func (p *parsedCrontab) appendEntry(schedule, command, comment string) {
+// appendEntry 在末尾追加可选注释、元数据行与任务行。
+func (p *parsedCrontab) appendEntry(schedule, command, comment, metaLine string) {
 	if comment != "" {
 		for _, line := range strings.Split(comment, "\n") {
 			p.lines = append(p.lines, "# "+line)
 		}
+	}
+	if metaLine != "" {
+		p.lines = append(p.lines, metaLine)
 	}
 	p.lines = append(p.lines, schedule+" "+command)
 }
@@ -184,15 +223,29 @@ func (p *parsedCrontab) replaceEntry(idx int, schedule, command string) (Entry, 
 		return Entry{}, wrap(ErrInvalidParam, "index 越界: "+itoa(idx)+"，共 "+itoa(len(p.entries))+" 条")
 	}
 	e := p.entries[idx]
+	if e.meta != nil {
+		bin, err := os.Executable()
+		if err != nil || bin == "" {
+			return Entry{}, wrap(ErrIO, "取不到插件自身路径，无法重写包装命令")
+		}
+		meta := taskMeta{V: metaVersion, Type: inferType(command), Name: e.meta.Name, Command: command}
+		metaLine := meta.encode()
+		wrapped := wrapperCommand(bin, runlogFilePath(), meta.Name, command)
+		if metaLine == "" || len(metaLine) > maxWrappedLineLen ||
+			len(schedule)+1+len(wrapped) > maxWrappedLineLen {
+			return Entry{}, wrap(ErrInvalidParam, "替换后的命令过长，无法保留执行日志包装")
+		}
+		p.lines[e.metaLine] = metaLine
+		e.meta = &meta
+		command = wrapped
+	}
 	line := schedule + " " + command
 	if e.disabled {
 		line = DisabledPrefix + line
 	}
 	p.lines[e.line] = line
-	return p.entryOf(idx, parsedEntry{
-		line: e.line, commentStart: e.commentStart,
-		schedule: schedule, command: command, disabled: e.disabled,
-	}), nil
+	e.schedule, e.command = schedule, command
+	return p.entryOf(idx, e), nil
 }
 
 // setEnabled 停用/启用第 idx 条任务，返回改后的条目与是否真的发生了变化。

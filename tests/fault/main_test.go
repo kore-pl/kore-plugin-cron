@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	fake.ApplyEnv()
+	os.Setenv("KORE_STATE_DIR", dir)
 	fakeCrontab = fake
 	code := m.Run()
 	_ = os.RemoveAll(dir)

@@ -27,6 +27,10 @@ type Entry struct {
 	Comment  string `json:"comment,omitempty"`
 	Raw      string `json:"raw"`
 	Enabled  bool   `json:"enabled"`
+	// TaskName 是 runlog 里使用的任务名（备注优先，其次命令）；Wrapped 表示该任务
+	// 由包装命令执行并会写逐任务执行日志。
+	TaskName string `json:"task_name,omitempty"`
+	Wrapped  bool   `json:"wrapped,omitempty"`
 }
 
 // ListResult 是 cron.list 的结构化结果；无 crontab 时 Entries 为空数组。
@@ -81,7 +85,10 @@ type AddResult struct {
 	Entry         *Entry                   `json:"entry,omitempty"`
 	BackupPath    string                   `json:"backup_path,omitempty"`
 	SchedulerTask *SchedulerTaskSuggestion `json:"scheduler_task,omitempty"`
-	Note          string                   `json:"note,omitempty"`
+	// ScheduledLog 表示该任务已套上包装命令，定时执行会写 runlog；
+	// false 时任务仍可执行，只是没有逐任务日志（Note 说明原因）。
+	ScheduledLog bool   `json:"scheduled_log"`
+	Note         string `json:"note,omitempty"`
 }
 
 // RemoveResult 是 cron.remove 的结构化结果。
@@ -159,4 +166,10 @@ type RunResult struct {
 	ExitCode   int    `json:"exit_code"`
 	DurationMS int64  `json:"duration_ms"`
 	TimedOut   bool   `json:"timed_out,omitempty"`
+	// OutputBytes 是实际输出总字节数（Output 只保留前 64 KiB）。
+	OutputBytes int64 `json:"output_bytes,omitempty"`
+	// TaskName 是本次执行在 runlog 里的任务名。
+	TaskName string `json:"task_name,omitempty"`
+	// LogError 非空表示执行本身成功、但 runlog 写入失败（不改变执行结果）。
+	LogError string `json:"log_error,omitempty"`
 }

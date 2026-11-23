@@ -17,6 +17,11 @@ import (
 )
 
 func main() {
+	// 包装执行模式：由 crontab 里的 `__task-run` 命令触发，不连接内核。
+	// 必须放在 loadConfig 之前——cron 环境没有 KORE_PLUGIN_SOCK。
+	if code, handled := croncore.RunTaskMode(os.Args[1:], os.Stdout, os.Stderr); handled {
+		os.Exit(code)
+	}
 	logger := newLogger(os.Getenv("KORE_LOG_LEVEL"))
 	if err := run(logger); err != nil {
 		logger.Error("插件退出", "err", err)

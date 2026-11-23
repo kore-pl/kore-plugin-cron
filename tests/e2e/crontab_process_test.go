@@ -7,6 +7,7 @@ import (
 	"net"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,7 +73,10 @@ func TestCrontabProcessE2E(t *testing.T) {
 	}
 
 	content, _ := fake.Content()
-	if content != "10 2 * * * /bin/echo replaced\n" {
+	if !strings.Contains(content, "# kore-cron:") ||
+		!strings.Contains(content, "__task-run") ||
+		!strings.Contains(content, "'/bin/echo replaced'") ||
+		strings.Count(content, "__task-run") != 1 {
 		t.Fatalf("最终 crontab 不符: %q", content)
 	}
 
