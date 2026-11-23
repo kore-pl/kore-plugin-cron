@@ -23,6 +23,8 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 | `cron.enable` | 按 0 起下标重新启用：去掉注释标记，逐字还原原任务 |
 | `cron.logs` | 读系统 cron 启动日志（journalctl / cron.log / syslog），返回 `{available, source, entries[], note}` |
 | `cron.run` | 同步执行**已注册任务**的命令，返回 `{started, output, exit_code, duration_ms}` |
+| `cron.templates` | 只读内置模板（4 条：每日备份 / 每小时健康检查 / 每周清理日志 / 每月证书检查），返回 `{templates[], count, note}`；不写 crontab、无副作用 |
+| `cron.batch` | 批量动作 `{action: enable\|disable\|remove\|run, ids:[0 起下标]}`：一次最多 50 条，逐条执行、部分失败不回滚，返回 `{action,total,succeeded[],failed[],note?}` |
 
 ### 数据形状
 
@@ -115,8 +117,14 @@ curl 也会被识别为 http。`cron.replace` 仍只接收 schedule + command（
 ### 方法级能力（info.json）
 
 `cron.run` / `cron.add` / `cron.remove` / `cron.replace` / `cron.enable` /
-`cron.disable` 声明为 `system:admin`，`cron.list` / `cron.logs` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
+`cron.disable` / `cron.batch` 声明为 `system:admin`，`cron.list` / `cron.logs` /
+`cron.templates` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
 `method_capabilities` 校验并决定是否落审计（只读方法不落 `invoke.*` 审计）。
+
+### 模板与批量（cron.templates / cron.batch）
+
+- `cron.templates` 无入参、只读：模板只描述「怎么配」（schedule + 命令 / URL），前端一键填表后仍需用户确认路径与地址，**保存才写 crontab**。
+- `cron.batch` 的 `ids` 是 `cron.list` 的 0 起下标，去重后执行；`remove` 按**倒序**删除以免下标漂移，其余动作逐条独立成败，返回里 `succeeded[]` / `failed[]` 分开列，单条失败不影响其它条目。处理预算 120s（最长于单条 `run` 的 60s）。
 
 ## 安全与一致性
 
