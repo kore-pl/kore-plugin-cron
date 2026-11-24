@@ -80,7 +80,7 @@ func call(t *testing.T, store *croncore.Store, logger *slog.Logger, method, para
 	request := &pluginapi.Request{
 		Type: pluginapi.TypeRequest, ID: "e2e", Method: method, Params: json.RawMessage(params),
 	}
-	response, shutdown := dispatch(request, config{id: "cron"}, store, logger)
+	response, shutdown := dispatch(request, &config{id: "cron"}, store, logger)
 	if shutdown {
 		t.Fatalf("%s 意外触发 shutdown", method)
 	}

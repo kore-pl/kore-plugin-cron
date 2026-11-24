@@ -1,7 +1,7 @@
 {
   "id": "cron",
   "name": "计划任务插件",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "protocol": "kore.plugin.v1",
   "lifecycle": "lazy",
   "depth_level": "production",
@@ -21,7 +21,9 @@
     "cron.disable",
     "cron.templates",
     "cron.batch",
-    "cron.migrate"
+    "cron.migrate",
+    "cron.config.get",
+    "cron.config.set"
   ],
   "method_capabilities": {
     "cron.list": "system:read",
@@ -34,7 +36,9 @@
     "cron.disable": "system:admin",
     "cron.templates": "system:read",
     "cron.batch": "system:admin",
-    "cron.migrate": "system:admin"
+    "cron.migrate": "system:admin",
+    "cron.config.get": "system:read",
+    "cron.config.set": "system:admin"
   },
   "triggers": [
     "schedule:daily@03:00"
@@ -50,6 +54,6 @@
   "scenario_tags": [
     "ops"
   ],
-  "size_bytes": 1572339,
+  "size_bytes": 1588411,
   "post_upgrade": "cron.migrate"
 }

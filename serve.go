@@ -29,7 +29,8 @@ func serve(conn net.Conn, cfg config, store *croncore.Store, logger *slog.Logger
 			logger.Debug("忽略非 request 帧")
 			continue
 		}
-		response, shutdown := dispatch(request, cfg, store, logger)
+		// 会话内单 goroutine 串行分发：&cfg 让 config.set 的变更在后续请求里可见。
+		response, shutdown := dispatch(request, &cfg, store, logger)
 		if err := pluginapi.WriteJSON(conn, response); err != nil {
 			if shutdown {
 				return nil

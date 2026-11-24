@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 (2026-11-24)
+
+- feat(cron): 补齐插件配置契约 `cron.config.get` / `cron.config.set`（`system:read` / `system:admin`）——统一配置面板现在有 cron 自己的设置表单。schema 四项全部来自本仓真实能力：`backup_dir`（任务备份目录）/`runlog_dir`（执行日志目录）/`log_file`（系统 cron 日志文件）/`disable_journal`（禁用 journalctl 读取）；不臆造日志保留天数 / 默认用户 / 时区 / 并发上限。
+- feat(cron): 配置持久化到 `<KORE_STATE_DIR>/config.json`（0600，临时文件 + fsync + rename 原子写），优先级 `config.json` > 环境变量 > 默认值；非法值返回 `E_INVALID` 且旧配置不变；写失败不改内存、不留半份文件。
+- feat(cron): 保存后把生效值写回 croncore 读取的 `KORE_CRON_*` 环境变量——下一次业务调用即用新值，`restart_required=false`（真热生效，不重启插件进程）。
+- feat(cron): `info.json` methods 与 method_capabilities 声明两个新方法；`manifest.json` 版本同步 0.8.0。
+- test(cron): 新增契约测试覆盖 schema 结构（PLUGIN-CONFIG §2）、info.json 声明、dispatch 命中带域/裸名、set 校验+0600 原子落盘+source=file+env 热生效、非法值不改盘、env 来源、sensitive 掩码与占位语义。
+
 ## 0.7.0 (2026-11-24)
 
 - feat(cron): 新增 `cron.migrate`（`system:admin`，幂等）——把宿主 crontab 里指向 `<pluginRoot>/<id>/<版本>/bin/<id>` 的 wrapper 行迁移到稳定路径 `current/bin/<id>`，返回 `rewritten` / `backup_path` / `stable_path` / `stable_ready` / `skipped` / `note`；与启动期迁移共用同一实现。

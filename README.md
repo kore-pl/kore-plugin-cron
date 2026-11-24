@@ -26,6 +26,8 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 | `cron.templates` | 只读内置模板（4 条：每日备份 / 每小时健康检查 / 每周清理日志 / 每月证书检查），返回 `{templates[], count, note}`；不写 crontab、无副作用 |
 | `cron.batch` | 批量动作 `{action: enable\|disable\|remove\|run, ids:[0 起下标]}`：一次最多 50 条，逐条执行、部分失败不回滚，返回 `{action,total,succeeded[],failed[],note?}` |
 | `cron.migrate` | 升级后置动作（幂等）：把 crontab 里指向版本目录的 wrapper 行迁移到稳定路径，返回 `{rewritten,backup_path?,stable_path?,stable_ready,skipped?,note?}`；`rewritten=0` 表示无需迁移，不写盘 |
+| `cron.config.get` | 统一配置面板表单描述（`system:read`）：返回 `{schema:{title,fields[]},values,source}`，四项可配项见下 |
+| `cron.config.set` | 保存配置（`system:admin`）：入参 `{values:{...}}`，校验 → 0600 原子写 → 热生效，返回 `{saved,applied,restart_required:false,warnings:[]}` |
 
 ### 数据形状
 
@@ -139,9 +141,22 @@ crontab 条目的 wrapper 命令只写**稳定路径** `<pluginRoot>/<id>/curren
 ### 方法级能力（info.json）
 
 `cron.run` / `cron.add` / `cron.remove` / `cron.replace` / `cron.enable` /
-`cron.disable` / `cron.batch` / `cron.migrate` 声明为 `system:admin`，`cron.list` / `cron.logs` /
-`cron.templates` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
+`cron.disable` / `cron.batch` / `cron.migrate` / `cron.config.set` 声明为 `system:admin`，`cron.list` / `cron.logs` /
+`cron.templates` / `cron.config.get` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
 `method_capabilities` 校验并决定是否落审计（只读方法不落 `invoke.*` 审计）。
+
+### 设置表单（cron.config.get / cron.config.set）
+
+统一配置面板通过这两个方法渲染 cron 自己的设置页（PLUGIN-CONFIG）：`config.json`（`<KORE_STATE_DIR>/config.json`，0600、原子写）> 环境变量 > 默认值。可配四项均对应本仓真实能力：
+
+| key | type | 默认 | 对应环境变量 |
+| --- | --- | --- | --- |
+| `backup_dir` | string | 空（用 `<state>/cron-backup`） | `KORE_CRON_BACKUP_DIR` |
+| `runlog_dir` | string | 空（用 `<state>/runlog`） | `KORE_CRON_RUNLOG_DIR` |
+| `log_file` | string | 空（journalctl → /var/log/cron.log） | `KORE_CRON_LOG_FILE` |
+| `disable_journal` | bool | `false` | `KORE_CRON_DISABLE_JOURNAL` |
+
+保存后把生效值写回上述环境变量；croncore 每次方法调用都读取这些开关，因此下一次调用即生效，`restart_required=false`，不重启插件进程或 kored。路径项必须是绝对路径，否则 `E_INVALID` 且旧配置不变。
 
 ### 升级后置动作（post_upgrade → cron.migrate）
 
@@ -222,7 +237,7 @@ MIT License — pengtang1024
 - **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 - **兼容性**：`protocol: kore.plugin.v1` · `requires_kore: >=0.1.0 <0.2.0` · `lifecycle: lazy` · 深度等级 `production`。
 - **验证方式**：本地 `make check` 优先（CI 只在 push main / tag / PR / 手动跑；发布前 `make dist` 连跑两次核对 sha 一致）。
-- **发布产物**：`make dist` → `dist/cron-0.7.0.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
+- **发布产物**：`make dist` → `dist/cron-0.8.0.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
 - **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
 
 <!-- oss:end -->

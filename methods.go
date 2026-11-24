@@ -53,7 +53,7 @@ type replaceParams struct {
 }
 
 // dispatch 把请求分发为响应帧；第二个返回值表示收到 kore.shutdown。
-func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, logger *slog.Logger) (*pluginapi.Response, bool) {
+func dispatch(request *pluginapi.Request, cfg *config, store *croncore.Store, logger *slog.Logger) (*pluginapi.Response, bool) {
 	response := &pluginapi.Response{Type: pluginapi.TypeResponse, ID: request.ID, ReqID: request.ReqID}
 	switch request.Method {
 	case "kore.shutdown":
@@ -65,6 +65,26 @@ func dispatch(request *pluginapi.Request, cfg config, store *croncore.Store, log
 		return response, false
 	case "kore.reload":
 		response.Result = json.RawMessage(`{"ok":true,"config_digest":""}`)
+		return response, false
+	}
+	// 插件配置契约（PLUGIN-CONFIG §1）：<id>.config.get / <id>.config.set，
+	// 同时兼容裸 config.get / config.set（与 cron 其它动词一致）。
+	switch request.Method {
+	case cfg.id + ".config.get", "config.get":
+		result, perr := configGet(cfg)
+		if perr != nil {
+			response.Error = perr
+			return response, false
+		}
+		response.Result = result
+		return response, false
+	case cfg.id + ".config.set", "config.set":
+		result, perr := configSet(request.Params, cfg)
+		if perr != nil {
+			response.Error = perr
+			return response, false
+		}
+		response.Result = result
 		return response, false
 	}
 	verb, ok := cronVerb(request.Method, cfg.id)
