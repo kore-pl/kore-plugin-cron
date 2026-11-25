@@ -56,6 +56,6 @@
   "scenario_tags": [
     "ops"
   ],
-  "size_bytes": 1588411,
+  "size_bytes": 1592411,
   "post_upgrade": "cron.migrate"
 }
