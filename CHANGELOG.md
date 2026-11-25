@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 (2026-11-25)
+
+- docs(l10n): 新增 zh/en/es/fr/de/ru/pt 七语 locale 与 docs/DETAIL 文档，README 顶部加语言切换行（无日语、无 ja 文件）
+- docs(oss): 补齐 .github/dependabot.yml（npm + github-actions weekly）、.github/CODEOWNERS、SECURITY.en.md 忠实译文
+- docs(wiki): 落盘六页 wiki 源文档；CONTRIBUTING 补 Git Flow 分支模型与 SSH 签名约定；README 增加中文 star 提示
+
 ## 0.9.0 (2026-11-25)
 
 - feat(cron): 注册只读方法 `cron.runlog`（`system:read`）——把 0.4.1 已实现的 `croncore.Store.Runlog` 接进协议：此前 `cronVerb` 白名单与 `info.json` 都没声明该动词，主壳调不到，用户在计划任务页看不到定时执行记录。入参 `{name?, since?, until?, limit?}`（`name` 按任务名大小写不敏感子串过滤；`since` / `until` 为 RFC3339 时间窗；`limit` 缺省 50、上限 200，负值归一到缺省），返回 `{available, entries[{task_name, started_at, duration_ms, exit_code, output_head, output_bytes, truncated, mode, timed_out}], count, note}`，最新在前。`available=false` 表示还没有任何记录（不是错误），`note` 说明记录来源。
