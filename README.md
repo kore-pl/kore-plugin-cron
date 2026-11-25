@@ -22,6 +22,7 @@ kore 的计划任务插件（生产级）：**真实管理当前用户的 cronta
 | `cron.disable` | 按 0 起下标停用任务：保留原定义，只加注释标记，系统不再执行 |
 | `cron.enable` | 按 0 起下标重新启用：去掉注释标记，逐字还原原任务 |
 | `cron.logs` | 读系统 cron 启动日志（journalctl / cron.log / syslog），返回 `{available, source, entries[], note}` |
+| `cron.runlog` | 逐次执行记录（只读）：`{name?, since?, until?, limit?}` → `{available, entries[{task_name, started_at, duration_ms, exit_code, output_head, output_bytes, truncated, mode, timed_out}], count, note}`，最新在前；`limit` 缺省 50、上限 200 |
 | `cron.run` | 同步执行**已注册任务**的命令，返回 `{started, output, exit_code, duration_ms}` |
 | `cron.templates` | 只读内置模板（4 条：每日备份 / 每小时健康检查 / 每周清理日志 / 每月证书检查），返回 `{templates[], count, note}`；不写 crontab、无副作用 |
 | `cron.batch` | 批量动作 `{action: enable\|disable\|remove\|run, ids:[0 起下标]}`：一次最多 50 条，逐条执行、部分失败不回滚，返回 `{action,total,succeeded[],failed[],note?}` |
@@ -80,6 +81,21 @@ curl 也会被识别为 http。`cron.replace` 仍只接收 schedule + command（
 - `name` 过滤：先匹配 crontab 条目的备注/命令，再按命令过滤日志行（尽力而为）。
 - **没有日志源时诚实返回** `available=false` + `source:"none"` + `note`（说明原因与
   "把命令重定向到日志文件"的补救方式），不把"读不到日志"伪装成"没有执行"。
+
+### 逐次执行历史（cron.runlog，0.9.0+）
+
+`cron.logs` 是 cron 守护进程的启动行，**不含退出码与输出**；要看"每次到底成没成功"用 `cron.runlog`：
+
+- 记录来源只有两个写入口：`cron.run`（立即执行，`mode=manual`）与 `cron.add` 生成的包装命令
+  `__task-run`（定时执行，`mode=scheduled`），执行结束当场追加一行到
+  `<state>/runlog/runlog.jsonl`（目录 0700、文件 0600，输出摘要按敏感处理）；**无后台收集器、无 ticker**。
+- 单条记录：`{task_name, started_at(RFC3339), duration_ms, exit_code, output_head(前 512 字节),
+  output_bytes(实际总量), truncated, mode, timed_out?}`；`task_name` 与 `cron.list` 的`entry.task_name`
+  同一口径（备注优先，其次命令，≤64 字节）。
+- 查询：`name` 大小写不敏感子串过滤、`since`/`until` 为 RFC3339 时间窗（含边界）、`limit`
+  缺省 50 / 上限 200；返回**最新在前**。文件超过 2 MiB 时按行轮转、只保留最近 400 行。
+- 还没有任何记录时返回 `available=false` + `note`（不是错误）；主壳计划任务页的「执行历史」
+  面板直接读这个方法，行内「最近执行」也优先用它（刷新不丢）。
 
 ### 稳定二进制路径与升级迁移（0.6.0+）
 
@@ -142,7 +158,7 @@ crontab 条目的 wrapper 命令只写**稳定路径** `<pluginRoot>/<id>/curren
 
 `cron.run` / `cron.add` / `cron.remove` / `cron.replace` / `cron.enable` /
 `cron.disable` / `cron.batch` / `cron.migrate` / `cron.config.set` 声明为 `system:admin`，`cron.list` / `cron.logs` /
-`cron.templates` / `cron.config.get` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
+`cron.runlog` / `cron.templates` / `cron.config.get` 为 `system:read`：内核在 `POST /api/v1/invoke/...` 转发前按
 `method_capabilities` 校验并决定是否落审计（只读方法不落 `invoke.*` 审计）。
 
 ### 设置表单（cron.config.get / cron.config.set）

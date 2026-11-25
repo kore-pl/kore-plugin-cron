@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 (2026-11-25)
+
+- feat(cron): 注册只读方法 `cron.runlog`（`system:read`）——把 0.4.1 已实现的 `croncore.Store.Runlog` 接进协议：此前 `cronVerb` 白名单与 `info.json` 都没声明该动词，主壳调不到，用户在计划任务页看不到定时执行记录。入参 `{name?, since?, until?, limit?}`（`name` 按任务名大小写不敏感子串过滤；`since` / `until` 为 RFC3339 时间窗；`limit` 缺省 50、上限 200，负值归一到缺省），返回 `{available, entries[{task_name, started_at, duration_ms, exit_code, output_head, output_bytes, truncated, mode, timed_out}], count, note}`，最新在前。`available=false` 表示还没有任何记录（不是错误），`note` 说明记录来源。
+- feat(cron): 记录由 `cron.run`（`mode=manual`）与 `cron.add` 生成的包装命令 `__task-run`（`mode=scheduled`）在每次执行结束时追加到 `<state>/runlog/runlog.jsonl`；查询只读文件尾部，**零后台收集器 / 零 ticker**（G-19），`output_head` 只保留前 512 字节（`output_bytes` 给实际总量，`truncated` 标明被截断）。
+- feat(cron): `info.json` 的 methods 与 method_capabilities 同步声明 `cron.runlog`；`manifest.json` 版本同步 0.9.0。
+- test(cron): 新增 `TestRunlogDispatchEncodesResult`——无记录时 `available=false` 且带 note（不报错）、真执行一次后按协议读到该条（任务名 / 退出码 / 模式 / 时间）、`limit` 负数归一、非法 `since` 返回 `E_INVALID`。
+
 ## 0.8.0 (2026-11-24)
 
 - feat(cron): 补齐插件配置契约 `cron.config.get` / `cron.config.set`（`system:read` / `system:admin`）——统一配置面板现在有 cron 自己的设置表单。schema 四项全部来自本仓真实能力：`backup_dir`（任务备份目录）/`runlog_dir`（执行日志目录）/`log_file`（系统 cron 日志文件）/`disable_journal`（禁用 journalctl 读取）；不臆造日志保留天数 / 默认用户 / 时区 / 并发上限。

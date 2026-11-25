@@ -189,3 +189,58 @@ func TestPostUpgradeHookDeclaredAndImplemented(t *testing.T) {
 		t.Fatalf("非安装布局必须返回跳过原因，实际 %+v", migrated)
 	}
 }
+
+// TestRunlogDispatchEncodesResult 是 cron.runlog 的注册回归：
+// 0.8.0 之前 croncore.Store.Runlog 已实现、但没进 cronVerb 白名单也没在 info.json
+// 声明，主壳调不到 → 页面看不到定时执行历史。本用例经与真实请求同一入口 dispatch()
+// 验证：没有记录时 available=false 不是错误；真执行一次后能读到该条记录。
+func TestRunlogDispatchEncodesResult(t *testing.T) {
+	fake, err := cronfake.Install(t.TempDir())
+	if err != nil {
+		t.Fatalf("安装假 crontab 失败: %v", err)
+	}
+	fake.Use(t)
+	if err := fake.Seed("# nightly\n0 3 * * * echo runlog-ok\n"); err != nil {
+		t.Fatalf("预置 crontab 失败: %v", err)
+	}
+	t.Setenv("KORE_CRON_RUNLOG_DIR", t.TempDir())
+	store := croncore.NewStore()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// ① 还没有任何记录：可用但为空，且带说明（不能报错、不能假装有数据）。
+	var absent croncore.RunlogResult
+	if err := json.Unmarshal(mustOK(t, call(t, store, logger, "cron.runlog", "{}")), &absent); err != nil {
+		t.Fatalf("解析空结果失败: %v", err)
+	}
+	if absent.Available || absent.Count != 0 || absent.Note == "" {
+		t.Fatalf("无记录时应 available=false / count=0 / 带 note，实际 %+v", absent)
+	}
+
+	// ② 真执行一次（cron.run 也会写 runlog），再查必须能看到这条记录。
+	if _, err := json.Marshal(mustOK(t, call(t, store, logger, "cron.run", `{"index":0}`))); err != nil {
+		t.Fatalf("立即执行失败: %v", err)
+	}
+	var result croncore.RunlogResult
+	if err := json.Unmarshal(mustOK(t, call(t, store, logger, "cron.runlog", `{"limit":5}`)), &result); err != nil {
+		t.Fatalf("解析 runlog 结果失败: %v", err)
+	}
+	if !result.Available || result.Count != 1 || len(result.Entries) != 1 {
+		t.Fatalf("执行一次后应有 1 条记录，实际 %+v", result)
+	}
+	entry := result.Entries[0]
+	if entry.TaskName == "" || entry.ExitCode != 0 || entry.Mode != "manual" {
+		t.Fatalf("记录字段不符（需支撑前端列表：任务名/退出码/模式）: %+v", entry)
+	}
+	if entry.StartedAt == "" || entry.DurationMS < 0 {
+		t.Fatalf("记录缺少时间或耗时: %+v", entry)
+	}
+
+	// ③ 参数归一：limit 越界夹到上限而不是报错；非法 since 仍是 E_INVALID。
+	if _, err := json.Marshal(mustOK(t, call(t, store, logger, "cron.runlog", `{"limit":-3}`))); err != nil {
+		t.Fatalf("limit 负数应归一而非报错: %v", err)
+	}
+	bad := call(t, store, logger, "cron.runlog", `{"since":"bad"}`)
+	if bad.Error == nil || bad.Error.Code != pluginapi.E_INVALID {
+		t.Fatalf("非法 since 应返回 E_INVALID: %+v", bad)
+	}
+}

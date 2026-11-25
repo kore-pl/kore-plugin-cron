@@ -20,6 +20,9 @@ const (
 	runTimeout      = 60 * time.Second
 	runVerbTimeout  = runTimeout + 5*time.Second
 	logsVerbTimeout = 15 * time.Second
+	// runlogVerbTimeout 是 cron.runlog 的预算：只读本地 JSONL 尾部（最多 4 MiB），
+	// 但轮转/大文件按行解析仍要时间，给 10s 不至于把内核请求拖满。
+	runlogVerbTimeout = 10 * time.Second
 	// migrateVerbTimeout 是 cron.migrate 的预算：读改写宿主 crontab 并备份，
 	// 与内核的 post_upgrade 调用上限（15s）对齐，避免内核先超时而插件仍在写。
 	migrateVerbTimeout = 15 * time.Second
@@ -32,6 +35,8 @@ func verbTimeout(verb string) time.Duration {
 		return runVerbTimeout
 	case "logs":
 		return logsVerbTimeout
+	case "runlog":
+		return runlogVerbTimeout
 	case "migrate":
 		return migrateVerbTimeout
 	case "batch":
@@ -105,7 +110,7 @@ func dispatch(request *pluginapi.Request, cfg *config, store *croncore.Store, lo
 func cronVerb(method, id string) (string, bool) {
 	verb := strings.TrimPrefix(method, id+".")
 	switch verb {
-	case "list", "add", "remove", "replace", "logs", "run", "enable", "disable", "templates", "batch", "migrate":
+	case "list", "add", "remove", "replace", "logs", "runlog", "run", "enable", "disable", "templates", "batch", "migrate":
 		return verb, true
 	default:
 		return "", false
@@ -170,6 +175,19 @@ func handleCronVerb(ctx context.Context, verb string, params json.RawMessage, st
 			return perr
 		}
 		result, err := store.Logs(ctx, p)
+		if err != nil {
+			return mapCoreError(err)
+		}
+		response.Result = encode(result)
+		return nil
+	case "runlog":
+		// 逐任务执行记录（定时执行由 wrapper 写、立即执行由 cron.run 写）。
+		// 只读查询，不启动任何后台收集器（G-19）：读文件尾部即出结果。
+		p, perr := parseRunlogParams(params)
+		if perr != nil {
+			return perr
+		}
+		result, err := store.Runlog(ctx, p)
 		if err != nil {
 			return mapCoreError(err)
 		}
@@ -256,6 +274,17 @@ func parseReplaceParams(raw json.RawMessage) (croncore.ReplaceParams, *pluginapi
 // parseLogsParams 解析 cron.logs 的 name / limit（都可选）。
 func parseLogsParams(raw json.RawMessage) (croncore.LogsParams, *pluginapi.Error) {
 	var p croncore.LogsParams
+	if perr := decodeObject(raw, &p); perr != nil {
+		return p, perr
+	}
+	return p, nil
+}
+
+// parseRunlogParams 解析 cron.runlog 的 name / since / until / limit（都可选）。
+//
+// 空对象 {} 是合法调用（A1：只读查询零参数不得报 E_INVALID），语义是"最近一批记录"。
+func parseRunlogParams(raw json.RawMessage) (croncore.RunlogParams, *pluginapi.Error) {
+	var p croncore.RunlogParams
 	if perr := decodeObject(raw, &p); perr != nil {
 		return p, perr
 	}
