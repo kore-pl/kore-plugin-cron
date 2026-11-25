@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Plugin de tâches planifiées",
+    "description": "Ce plugin de niveau production gère réellement le crontab de l’utilisateur courant : toutes les lectures/écritures passent par `crontab -l` / `crontab -`, sans toucher directement à `/var/spool/cron` ; il n’intègre aucun ordonnanceur, aucun ticker et aucun sondage (G-19) — le déclenchement est assuré par le cron système. Périmètre (ADR-0019) : il ne gère que le crontab système (tâches shell / http) ; les tâches de type plugin « appeler une méthode à une heure donnée » relèvent de l’ordonnanceur du noyau, le plugin ne produisant qu’une description suggérée sans les créer ni les exécuter.",
+    "detail": "docs/DETAIL.fr.md"
+  }
+}

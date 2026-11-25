@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "计划任务插件",
+    "description": "本插件是生产级计划任务插件，真实管理当前用户的 crontab：所有读写都通过 `crontab -l` / `crontab -` 完成，不直接改 `/var/spool/cron`；插件不内置调度器、不起 ticker、不轮询（G-19），实际触发由系统 cron 执行。能力边界（ADR-0019）：只管系统 crontab（shell / http 任务）；\"到点调用插件方法\"的 plugin 类型任务归内核 scheduler，插件只生成建议描述，不创建、不执行。",
+    "detail": "docs/DETAIL.md"
+  }
+}

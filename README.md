@@ -1,5 +1,7 @@
 # kore-plugin-cron
 
+语言：[简体中文](docs/DETAIL.md) · [English](docs/DETAIL.en.md) · [Español](docs/DETAIL.es.md) · [Français](docs/DETAIL.fr.md) · [Deutsch](docs/DETAIL.de.md) · [Русский](docs/DETAIL.ru.md) · [Português](docs/DETAIL.pt.md)
+
 kore 的计划任务插件（生产级）：**真实管理当前用户的 crontab**。所有读写都通过
 `crontab -l` / `crontab -` 完成，不直接改 `/var/spool/cron`；插件不内置调度器、
 不起 ticker、不轮询（G-19），实际触发由系统 cron 执行。
@@ -257,3 +259,7 @@ MIT License — pengtang1024
 - **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
 
 <!-- oss:end -->
+
+## 支持本项目
+
+如果这个项目对你有帮助，欢迎在 GitHub 仓库右上角点个 ⭐ Star——你的支持是作者持续维护的动力。也欢迎提 issue、PR 或参与讨论。

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Scheduled task plugin",
+    "description": "This production-grade plugin manages the current user’s crontab for real: all reads and writes go through `crontab -l` / `crontab -`, never touching `/var/spool/cron` directly; the plugin embeds no scheduler, starts no ticker and does no polling (G-19) — actual triggering is performed by the system cron. Scope (ADR-0019): it only manages the system crontab (shell / http jobs); \"call a plugin method on schedule\" jobs belong to the kernel scheduler, and the plugin only produces a suggested description without creating or executing them.",
+    "detail": "docs/DETAIL.en.md"
+  }
+}

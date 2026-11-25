@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Plugin für geplante Aufgaben",
+    "description": "Dieses Plugin in Produktionsqualität verwaltet die crontab des aktuellen Benutzers tatsächlich: alle Lese- und Schreibzugriffe laufen über `crontab -l` / `crontab -`, niemals direkt über `/var/spool/cron`; das Plugin enthält keinen Scheduler, keinen Ticker und kein Polling (G-19) — die eigentliche Auslösung erfolgt durch den System-cron. Geltungsbereich (ADR-0019): Es verwaltet nur die System-crontab (shell / http Aufgaben); Aufgaben des Typs „Plugin-Methode planmäßig aufrufen“ gehören zum Kernel-Scheduler, das Plugin erzeugt nur eine vorgeschlagene Beschreibung, ohne sie zu erstellen oder auszuführen.",
+    "detail": "docs/DETAIL.de.md"
+  }
+}

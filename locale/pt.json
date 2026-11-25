@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Plugin de tarefas agendadas",
+    "description": "Este plugin de nível de produção gerencia de verdade o crontab do usuário atual: todas as leituras e escritas passam por `crontab -l` / `crontab -`, sem tocar diretamente em `/var/spool/cron`; o plugin não embeda agendador, nem ticker, nem polling (G-19) — o disparo real é feito pelo cron do sistema. Escopo (ADR-0019): ele gerencia apenas o crontab do sistema (tarefas shell / http); tarefas do tipo plugin «chamar um método em determinada hora» pertencem ao agendador do kernel, e o plugin apenas gera uma descrição sugerida, sem criá-las nem executá-las.",
+    "detail": "docs/DETAIL.pt.md"
+  }
+}

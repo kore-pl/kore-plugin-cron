@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Complemento de tareas programadas",
+    "description": "Este complemento de nivel producción gestiona de verdad el crontab del usuario actual: todas las lecturas y escrituras pasan por `crontab -l` / `crontab -`, sin tocar `/var/spool/cron` directamente; no incorpora planificador, ni ticker, ni sondeo (G-19): el disparo real lo hace el cron del sistema. Alcance (ADR-0019): solo gestiona el crontab del sistema (tareas shell / http); las tareas de tipo plugin «llamar a un método a una hora» corresponden al planificador del núcleo, y el complemento solo genera una descripción sugerida sin crearlas ni ejecutarlas.",
+    "detail": "docs/DETAIL.es.md"
+  }
+}
